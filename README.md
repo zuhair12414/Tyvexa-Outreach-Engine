@@ -4,15 +4,15 @@ Dynamic lead generation utility for an agentic AI startup. Each run starts from 
 
 ## What v1 Does
 
-- Accepts a dynamic campaign prompt and converts it into a per-run `CampaignSpec`; it does not depend on permanent restaurant/BPO/etc. profiles.
+- Accepts a dynamic campaign prompt and uses an AI API to convert it into a per-run `CampaignSpec`; it does not depend on permanent restaurant/BPO/etc. profiles.
 - Runs a controlled multi-agent pipeline: strategy, discovery, evidence, qualification, market context, dossier creation, and clarification.
 - Keeps campaign memory separate from per-lead memory so multi-lead runs do not bleed assumptions across companies.
 - Produces lead dossiers with evidence packs, lead assessments, confidence, classification, manual LinkedIn guidance, and follow-up state.
-- Starts with provider interfaces and null/sample providers; real API keys can be added later.
+- Starts with provider interfaces, AI strategy planning, and null/sample providers; real search/crawl keys can be added incrementally.
 
 ## Architecture Basis
 
-The active design is a code-orchestrated pipeline with LLM/model reasoning reserved for campaign strategy and evidence classification later. This follows three practical patterns from current agent frameworks:
+The active design is a code-orchestrated pipeline where the campaign strategy agent is AI-first and local heuristics only validate, normalize, or provide a clearly marked fallback when no model key is configured. This follows three practical patterns from current agent frameworks:
 
 - OpenAI Agents SDK: mix LLM-driven decisions with code orchestration when cost, speed, and predictability matter; use specialist agents for bounded tasks rather than tiny overlapping roles. Source: https://openai.github.io/openai-agents-python/multi_agent/
 - LangChain/LangGraph handoffs: keep handoff context deliberate because passing full sub-agent history can create bloat and confusion. Source: https://docs.langchain.com/oss/python/langchain/multi-agent/handoffs
@@ -28,7 +28,7 @@ PYTHONPATH=src python3 -m cold_outreach_engine.dashboard
 
 Then open `http://127.0.0.1:8088`.
 
-Plan a real prompt without spending provider credits:
+Plan a real prompt without spending search/crawl provider credits. If `OPENAI_API_KEY` is configured, this step can still use AI tokens because the model creates the operating spec:
 
 ```bash
 PYTHONPATH=src python3 -m cold_outreach_engine.cli plan "Find me leads in Finland for service businesses looking for voice AI capabilities"
@@ -45,6 +45,7 @@ PYTHONPATH=src python3 -m cold_outreach_engine.cli run "Find me leads in Finland
 Copy `.env.example` to `.env` and add:
 
 - `OPENAI_API_KEY`
+- `OPENAI_MODEL`, default `gpt-4o-mini`
 - `GOOGLE_PLACES_API_KEY`
 - `BRAVE_SEARCH_API_KEY`
 - `FIRECRAWL_API_KEY`
@@ -54,10 +55,10 @@ The core architecture is provider-based. Google Places, Brave Search, and Firecr
 
 Provider roles:
 
+- `OPENAI_API_KEY`: AI-first prompt interpretation into campaign scope, search queries, scoring rubric, solution-gap logic, source priorities, and clarification triggers.
 - `GOOGLE_PLACES_API_KEY`: location-based company discovery when the campaign spec indicates local businesses.
 - `BRAVE_SEARCH_API_KEY`: broader web/company discovery for service companies, operations-heavy businesses, and niche campaigns.
 - `FIRECRAWL_API_KEY`: web search fallback plus website extraction for qualification, solution detection, and buyer-signal evidence.
-- `OPENAI_API_KEY`: planned structured classification and prompt-to-rubric improvements.
 
 Cost guards:
 
@@ -70,11 +71,11 @@ Cost guards:
 - No LinkedIn scraping or automation. The engine only prepares manual LinkedIn outreach context.
 - No factual claim without evidence URL, user answer, or campaign rule.
 - Unknown data stays `unknown`, `needs_input`, or `manual_review`; it is never guessed.
-- Deep crawling and LLM calls happen only after cheap filters pass.
+- Deep crawling happens only after cheap filters pass. AI strategy planning can happen before discovery because it defines the run; later AI classification should stay behind evidence and cost gates.
 
 ## Current Agent Split
 
-- Campaign Strategy Agent: prompt to dynamic campaign operating spec.
+- Campaign Strategy Agent: AI API converts the prompt into a dynamic campaign operating spec; local code validates/normalizes and only falls back when no model is configured.
 - Lead Discovery Agent
 - Deduplication Agent
 - Evidence Agent: website/public data to structured evidence pack.

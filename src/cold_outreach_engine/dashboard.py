@@ -9,7 +9,11 @@ from cold_outreach_engine.agents.campaign_strategy import CampaignStrategyAgent
 from cold_outreach_engine.config import load_settings
 from cold_outreach_engine.models import to_jsonable, utc_now
 from cold_outreach_engine.orchestrator import LeadGenerationOrchestrator
-from cold_outreach_engine.providers.factory import build_crawl_provider, build_search_provider
+from cold_outreach_engine.providers.factory import (
+    build_crawl_provider,
+    build_llm_provider,
+    build_search_provider,
+)
 from cold_outreach_engine.storage import JsonStore
 
 
@@ -597,6 +601,10 @@ HTML = """<!doctype html>
         chips.push(`Targets: ${(campaign.industries || []).join(', ') || 'unknown'}`);
       }
       if (spec) {
+        const strategy = spec.strategy_source === 'ai_api'
+          ? `AI API${spec.strategy_model ? ' / ' + spec.strategy_model : ''}`
+          : 'Fallback validator';
+        chips.push(`Strategy: ${strategy}`);
         chips.push(`Spec: ${spec.version || 'dynamic'}`);
         chips.push(`Sources: ${(spec.source_priorities || []).slice(0, 3).join(' + ') || 'pending'}`);
       }
@@ -629,6 +637,7 @@ HTML = """<!doctype html>
           items: [
           campaign ? `Offer: ${campaign.offer}` : 'Waiting for a prompt.',
           campaign ? `Targets: ${(campaign.industries || []).join(', ') || 'unknown'}` : 'No target segment yet.',
+          spec ? `Strategy source: ${spec.strategy_source === 'ai_api' ? 'AI API' : 'fallback validator'}` : 'Strategy source pending.',
           spec ? `Pain hypotheses: ${(spec.pain_hypotheses || []).slice(0, 3).join('; ')}` : 'Dynamic spec not generated for this stored run.',
           ],
         },
@@ -944,7 +953,7 @@ HTML = """<!doctype html>
 
     async function planCampaign() {
       const prompt = document.querySelector('textarea[name="prompt"]').value;
-      document.querySelector('#run-status').textContent = 'Planning without external API calls...';
+      document.querySelector('#run-status').textContent = 'Planning strategy spec; no discovery providers yet...';
       const response = await fetch('/api/campaign-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -955,7 +964,7 @@ HTML = """<!doctype html>
       selectedCampaignId = result.campaign.id;
       selectedId = null;
       document.querySelector('#run-status').textContent =
-        `Spec: ${(result.campaign.countries || []).join(', ')} / ${(result.campaign.industries || []).join(', ')} / ${(result.campaign_spec.source_priorities || result.active_search_providers).join(' + ')}`;
+        `Spec: ${(result.campaign.countries || []).join(', ')} / ${(result.campaign.industries || []).join(', ')} / ${(result.campaign_spec.strategy_source || 'unknown strategy')} / ${(result.campaign_spec.source_priorities || result.active_search_providers).join(' + ')}`;
       render();
     }
 
@@ -991,6 +1000,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/state":
             search_provider = build_search_provider(self.settings)
             crawl_provider = build_crawl_provider(self.settings)
+            llm_provider = build_llm_provider(self.settings)
             self._json(
                 {
                     "campaigns": self.store.read_collection("campaigns"),
@@ -1012,6 +1022,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                             for provider in getattr(search_provider, "providers", [search_provider])
                         ],
                         "active_crawl_provider": type(crawl_provider).__name__,
+                        "active_strategy_provider": type(llm_provider).__name__
+                        if llm_provider
+                        else "heuristic_fallback",
+                        "strategy_model": self.settings.openai_model
+                        if llm_provider
+                        else None,
                         "max_candidates_per_run": self.settings.max_candidates_per_run,
                         "max_deep_analysis_per_run": self.settings.max_deep_analysis_per_run,
                     },
@@ -1028,7 +1044,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not prompt:
                 self._json({"error": "prompt is required"}, status=400)
                 return
-            campaign, spec = CampaignStrategyAgent().plan(prompt)
+            llm_provider = build_llm_provider(self.settings)
+            campaign, spec = CampaignStrategyAgent(llm_provider).plan(prompt)
             search_provider = build_search_provider(self.settings)
             crawl_provider = build_crawl_provider(self.settings)
             self._json(
@@ -1040,6 +1057,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         for provider in getattr(search_provider, "providers", [search_provider])
                     ],
                     "active_crawl_provider": type(crawl_provider).__name__,
+                    "active_strategy_provider": type(llm_provider).__name__
+                    if llm_provider
+                    else "heuristic_fallback",
                     "caps": {
                         "max_candidates_per_run": self.settings.max_candidates_per_run,
                         "max_deep_analysis_per_run": self.settings.max_deep_analysis_per_run,
@@ -1053,7 +1073,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not prompt:
                 self._json({"error": "prompt is required"}, status=400)
                 return
-            campaign, spec = CampaignStrategyAgent().plan(prompt)
+            llm_provider = build_llm_provider(self.settings)
+            campaign, spec = CampaignStrategyAgent(llm_provider).plan(prompt)
 
             def record_provider_error(error) -> None:
                 self.store.upsert("provider_errors", to_jsonable(error))
@@ -1066,6 +1087,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 store=self.store,
                 max_candidates_per_run=self.settings.max_candidates_per_run,
                 max_deep_analysis_per_run=self.settings.max_deep_analysis_per_run,
+                strategy_agent=CampaignStrategyAgent(llm_provider),
             ).run_campaign(campaign, spec)
             self._json(
                 {

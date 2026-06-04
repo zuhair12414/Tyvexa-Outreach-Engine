@@ -7,13 +7,18 @@ from cold_outreach_engine.agents.campaign_strategy import CampaignStrategyAgent
 from cold_outreach_engine.config import load_settings
 from cold_outreach_engine.models import CampaignContext, ProviderError, to_jsonable
 from cold_outreach_engine.orchestrator import LeadGenerationOrchestrator
-from cold_outreach_engine.providers.factory import build_crawl_provider, build_search_provider
+from cold_outreach_engine.providers.factory import (
+    build_crawl_provider,
+    build_llm_provider,
+    build_search_provider,
+)
 from cold_outreach_engine.storage import JsonStore
 
 
 def sample_run() -> None:
     settings = load_settings()
     store = JsonStore(settings.data_dir)
+    llm_provider = build_llm_provider(settings)
     campaign = CampaignContext(
         prompt="Find dynamic prospects based on the supplied ICP.",
         offer="voice AI capabilities for high-volume customer conversations",
@@ -29,6 +34,7 @@ def sample_run() -> None:
         store=store,
         max_candidates_per_run=settings.max_candidates_per_run,
         max_deep_analysis_per_run=settings.max_deep_analysis_per_run,
+        strategy_agent=CampaignStrategyAgent(llm_provider),
     )
     result = orchestrator.run_campaign(campaign)
     print(json.dumps(to_jsonable(result), indent=2))
@@ -36,7 +42,8 @@ def sample_run() -> None:
 
 def plan_prompt(prompt: str) -> None:
     settings = load_settings()
-    campaign, spec = CampaignStrategyAgent().plan(prompt)
+    llm_provider = build_llm_provider(settings)
+    campaign, spec = CampaignStrategyAgent(llm_provider).plan(prompt)
     search_provider = build_search_provider(settings)
     crawl_provider = build_crawl_provider(settings)
     providers = [type(p).__name__ for p in getattr(search_provider, "providers", [search_provider])]
@@ -44,11 +51,14 @@ def plan_prompt(prompt: str) -> None:
     print(
         json.dumps(
             {
-                "mode": "plan_only_no_api_calls",
+                "mode": "plan_only_no_search_provider_calls",
                 "campaign": to_jsonable(campaign),
                 "campaign_spec": to_jsonable(spec),
                 "active_search_providers": providers,
                 "active_crawl_provider": type(crawl_provider).__name__,
+                "active_strategy_provider": type(llm_provider).__name__
+                if llm_provider
+                else "heuristic_fallback",
                 "caps": {
                     "max_candidates_per_run": settings.max_candidates_per_run,
                     "max_deep_analysis_per_run": settings.max_deep_analysis_per_run,
@@ -65,7 +75,8 @@ def run_prompt(prompt: str, approved: bool) -> None:
 
     settings = load_settings()
     store = JsonStore(settings.data_dir)
-    campaign, spec = CampaignStrategyAgent().plan(prompt)
+    llm_provider = build_llm_provider(settings)
+    campaign, spec = CampaignStrategyAgent(llm_provider).plan(prompt)
 
     provider_errors: list[ProviderError] = []
 
@@ -79,6 +90,7 @@ def run_prompt(prompt: str, approved: bool) -> None:
         store=store,
         max_candidates_per_run=settings.max_candidates_per_run,
         max_deep_analysis_per_run=settings.max_deep_analysis_per_run,
+        strategy_agent=CampaignStrategyAgent(llm_provider),
     )
     result = orchestrator.run_campaign(campaign, spec)
     statuses: dict[str, int] = {}

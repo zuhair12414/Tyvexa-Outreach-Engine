@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from cold_outreach_engine.agents.campaign_strategy import CampaignStrategyAgent
 from cold_outreach_engine.models import CampaignContext, SourcePlan
+from cold_outreach_engine.providers.base import LlmProvider
 
 
 class SourceRouterAgent:
@@ -9,8 +10,8 @@ class SourceRouterAgent:
 
     name = "source_router_agent"
 
-    def __init__(self) -> None:
-        self.strategy = CampaignStrategyAgent()
+    def __init__(self, llm_provider: LlmProvider | None = None) -> None:
+        self.strategy = CampaignStrategyAgent(llm_provider)
 
     def run(self, campaign: CampaignContext) -> SourcePlan:
         spec = self.strategy.build_spec(campaign)

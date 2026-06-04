@@ -11,6 +11,7 @@ class Settings:
     max_candidates_per_run: int
     max_deep_analysis_per_run: int
     openai_api_key: str | None
+    openai_model: str
     google_places_api_key: str | None
     brave_search_api_key: str | None
     firecrawl_api_key: str | None
@@ -37,6 +38,7 @@ def load_settings() -> Settings:
         max_candidates_per_run=int(os.getenv("LEADGEN_MAX_CANDIDATES_PER_RUN", "50")),
         max_deep_analysis_per_run=int(os.getenv("LEADGEN_MAX_DEEP_ANALYSIS_PER_RUN", "20")),
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         google_places_api_key=os.getenv("GOOGLE_PLACES_API_KEY") or None,
         brave_search_api_key=os.getenv("BRAVE_SEARCH_API_KEY") or None,
         firecrawl_api_key=os.getenv("FIRECRAWL_API_KEY") or None,

@@ -46,8 +46,9 @@ class LeadGenerationOrchestrator:
         store: JsonStore,
         max_candidates_per_run: int = 50,
         max_deep_analysis_per_run: int = 20,
+        strategy_agent: CampaignStrategyAgent | None = None,
     ) -> None:
-        self.strategy = CampaignStrategyAgent()
+        self.strategy = strategy_agent or CampaignStrategyAgent()
         self.discovery = LeadDiscoveryAgent(search_provider)
         self.deduper = DeduplicationAgent()
         self.evidence = EvidenceAgent(crawl_provider)

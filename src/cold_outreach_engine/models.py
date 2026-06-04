@@ -92,6 +92,10 @@ class CampaignSpec:
     buyer_personas: list[str]
     scoring_rubric: dict[str, int]
     clarification_triggers: list[str]
+    target_locations: list[str] = field(default_factory=list)
+    solution_gaps: list[str] = field(default_factory=list)
+    strategy_source: str = "heuristic_fallback"
+    strategy_model: str | None = None
     confidence_notes: list[str] = field(default_factory=list)
     version: str = "dynamic_spec_v1"
     id: str = field(default_factory=lambda: f"spec_{uuid4().hex[:10]}")

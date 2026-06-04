@@ -4,10 +4,16 @@ import httpx
 
 from cold_outreach_engine.config import Settings
 from cold_outreach_engine.models import CampaignContext, CampaignSpec, ProviderError
-from cold_outreach_engine.providers.base import CandidateCompany, CrawlProvider, SearchProvider
+from cold_outreach_engine.providers.base import (
+    CandidateCompany,
+    CrawlProvider,
+    LlmProvider,
+    SearchProvider,
+)
 from cold_outreach_engine.providers.brave_search import BraveSearchProvider
 from cold_outreach_engine.providers.firecrawl import FirecrawlProvider, FirecrawlSearchProvider
 from cold_outreach_engine.providers.google_places import GooglePlacesProvider
+from cold_outreach_engine.providers.openai_llm import OpenAILlmProvider
 from cold_outreach_engine.providers.sample import SampleCrawlProvider, SampleSearchProvider
 
 
@@ -73,3 +79,9 @@ def build_crawl_provider(settings: Settings) -> CrawlProvider:
     if settings.firecrawl_api_key:
         return FirecrawlProvider(settings.firecrawl_api_key)
     return SampleCrawlProvider()
+
+
+def build_llm_provider(settings: Settings) -> LlmProvider | None:
+    if settings.openai_api_key:
+        return OpenAILlmProvider(settings.openai_api_key, settings.openai_model)
+    return None
