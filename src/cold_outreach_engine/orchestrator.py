@@ -2,21 +2,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cold_outreach_engine.agents.buyer_signal import BuyerSignalAgent
+from cold_outreach_engine.agents.campaign_strategy import CampaignStrategyAgent
 from cold_outreach_engine.agents.clarification import ClarificationAgent
-from cold_outreach_engine.agents.competitor_gap import CompetitorGapAgent
 from cold_outreach_engine.agents.deduper import DeduplicationAgent
 from cold_outreach_engine.agents.discovery import LeadDiscoveryAgent
-from cold_outreach_engine.agents.existing_solution import ExistingSolutionAgent
+from cold_outreach_engine.agents.evidence import EvidenceAgent
+from cold_outreach_engine.agents.market_context import MarketContextAgent
 from cold_outreach_engine.agents.outreach_prep import OutreachPrepAgent
 from cold_outreach_engine.agents.qualification import LeadQualificationAgent
-from cold_outreach_engine.agents.scoring import ScoringAgent
-from cold_outreach_engine.agents.source_router import SourceRouterAgent
 from cold_outreach_engine.models import (
     CampaignContext,
+    CampaignSpec,
     ClarificationQuestion,
+    EvidencePack,
+    LeadAssessment,
     LeadDossier,
     LeadMemory,
+    MarketContext,
+    SourcePlan,
     to_jsonable,
 )
 from cold_outreach_engine.providers.base import CrawlProvider, SearchProvider
@@ -26,7 +29,11 @@ from cold_outreach_engine.storage import JsonStore
 @dataclass
 class RunResult:
     campaign: CampaignContext
+    spec: CampaignSpec
     leads: list[LeadMemory]
+    evidence_packs: list[EvidencePack]
+    assessments: list[LeadAssessment]
+    market_contexts: list[MarketContext]
     dossiers: list[LeadDossier]
     questions: list[ClarificationQuestion]
 
@@ -40,50 +47,105 @@ class LeadGenerationOrchestrator:
         max_candidates_per_run: int = 50,
         max_deep_analysis_per_run: int = 20,
     ) -> None:
+        self.strategy = CampaignStrategyAgent()
         self.discovery = LeadDiscoveryAgent(search_provider)
-        self.source_router = SourceRouterAgent()
         self.deduper = DeduplicationAgent()
-        self.qualification = LeadQualificationAgent(crawl_provider)
-        self.buyer_signal = BuyerSignalAgent()
-        self.competitor_gap = CompetitorGapAgent()
-        self.existing_solution = ExistingSolutionAgent()
-        self.scoring = ScoringAgent()
+        self.evidence = EvidenceAgent(crawl_provider)
+        self.qualification = LeadQualificationAgent()
+        self.market_context = MarketContextAgent()
         self.clarification = ClarificationAgent()
-        self.outreach_prep = OutreachPrepAgent()
+        self.dossier = OutreachPrepAgent()
         self.store = store
         self.max_candidates_per_run = max_candidates_per_run
         self.max_deep_analysis_per_run = max_deep_analysis_per_run
 
-    def run_campaign(self, campaign: CampaignContext) -> RunResult:
-        self.store.upsert("campaigns", to_jsonable(campaign))
-        source_plan = self.source_router.run(campaign)
-        self.store.upsert("source_plans", to_jsonable(source_plan))
+    def run_campaign(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> RunResult:
+        spec = spec or self.strategy.build_spec(campaign)
+        self._store_campaign_plan(campaign, spec)
 
-        leads = self.deduper.run(self.discovery.run(campaign))[: self.max_candidates_per_run]
+        leads = self.deduper.run(
+            self.discovery.run(campaign, spec)
+        )[: self.max_candidates_per_run]
         leads_to_process = leads[: self.max_deep_analysis_per_run]
+
+        evidence_packs: list[EvidencePack] = []
+        assessments: list[LeadAssessment] = []
+        market_contexts: list[MarketContext] = []
         dossiers: list[LeadDossier] = []
         questions: list[ClarificationQuestion] = []
 
         for lead in leads_to_process:
-            lead, _profile_score = self.qualification.run(campaign, lead)
-            buyer_signals = self.buyer_signal.run(campaign, lead)
-            solution = self.existing_solution.run(lead)
-            gap = self.competitor_gap.run(campaign, lead)
-            score = self.scoring.run(campaign, lead, buyer_signals, solution, gap)
+            evidence_pack = self.evidence.run(campaign, spec, lead)
+            assessment, score = self.qualification.run(campaign, spec, lead, evidence_pack)
+            market_context = self.market_context.run(campaign, spec, lead, assessment)
 
-            question = self.clarification.run(campaign, lead, score)
+            question = self.clarification.run(campaign, lead, assessment, spec)
             if question:
                 questions.append(question)
                 self.store.upsert("clarifications", to_jsonable(question))
 
-            dossier = self.outreach_prep.run(campaign, lead, score, gap, solution, buyer_signals)
+            dossier = self.dossier.run(campaign, spec, lead, assessment, market_context)
+
+            evidence_packs.append(evidence_pack)
+            assessments.append(assessment)
+            market_contexts.append(market_context)
             dossiers.append(dossier)
 
-            self.store.upsert("leads", to_jsonable(lead))
-            for signal in buyer_signals:
-                self.store.upsert("buyer_signals", to_jsonable(signal))
-            self.store.upsert("solution_assessments", to_jsonable(solution))
-            self.store.upsert("scores", to_jsonable(score), key="lead_id")
-            self.store.upsert("dossiers", to_jsonable(dossier))
+            self._store_lead_outputs(
+                lead=lead,
+                evidence_pack=evidence_pack,
+                assessment=assessment,
+                market_context=market_context,
+                score=score,
+                dossier=dossier,
+            )
 
-        return RunResult(campaign=campaign, leads=leads_to_process, dossiers=dossiers, questions=questions)
+        return RunResult(
+            campaign=campaign,
+            spec=spec,
+            leads=leads_to_process,
+            evidence_packs=evidence_packs,
+            assessments=assessments,
+            market_contexts=market_contexts,
+            dossiers=dossiers,
+            questions=questions,
+        )
+
+    def _store_campaign_plan(self, campaign: CampaignContext, spec: CampaignSpec) -> None:
+        self.store.upsert("campaigns", to_jsonable(campaign))
+        self.store.upsert("campaign_specs", to_jsonable(spec))
+        self.store.upsert(
+            "source_plans",
+            to_jsonable(
+                SourcePlan(
+                    campaign_id=campaign.id,
+                    sources=spec.source_priorities,
+                    search_queries=spec.search_queries,
+                    rationale=(
+                        "Generated by Campaign Strategy Agent from the current prompt; "
+                        "not a hardcoded industry profile."
+                    ),
+                )
+            ),
+        )
+
+    def _store_lead_outputs(
+        self,
+        lead: LeadMemory,
+        evidence_pack: EvidencePack,
+        assessment: LeadAssessment,
+        market_context: MarketContext,
+        score,
+        dossier: LeadDossier,
+    ) -> None:
+        self.store.upsert("leads", to_jsonable(lead))
+        self.store.upsert("evidence_packs", to_jsonable(evidence_pack), key="lead_id")
+        self.store.upsert("lead_assessments", to_jsonable(assessment), key="lead_id")
+        self.store.upsert("market_contexts", to_jsonable(market_context), key="lead_id")
+        for signal in assessment.buyer_signals:
+            self.store.upsert("buyer_signals", to_jsonable(signal))
+        self.store.upsert("solution_assessments", to_jsonable(assessment.solution))
+        self.store.upsert("scores", to_jsonable(score), key="lead_id")
+        self.store.upsert("dossiers", to_jsonable(dossier))

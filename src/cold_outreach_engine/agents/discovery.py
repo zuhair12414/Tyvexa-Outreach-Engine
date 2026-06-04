@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cold_outreach_engine.models import CampaignContext, Evidence, LeadMemory
+from cold_outreach_engine.models import CampaignContext, CampaignSpec, Evidence, LeadMemory
 from cold_outreach_engine.providers.base import SearchProvider
 
 
@@ -10,9 +10,9 @@ class LeadDiscoveryAgent:
     def __init__(self, search_provider: SearchProvider) -> None:
         self.search_provider = search_provider
 
-    def run(self, campaign: CampaignContext) -> list[LeadMemory]:
+    def run(self, campaign: CampaignContext, spec: CampaignSpec | None = None) -> list[LeadMemory]:
         leads: list[LeadMemory] = []
-        for candidate in self.search_provider.search_companies(campaign):
+        for candidate in self.search_provider.search_companies(campaign, spec):
             evidence = []
             if candidate.source_url:
                 evidence.append(
@@ -35,4 +35,3 @@ class LeadDiscoveryAgent:
             )
             leads.append(lead)
         return leads
-

@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from cold_outreach_engine.agents.icp_planner import IcpPlannerAgent
+from cold_outreach_engine.agents.campaign_strategy import CampaignStrategyAgent
 from cold_outreach_engine.config import load_settings
 from cold_outreach_engine.models import to_jsonable, utc_now
 from cold_outreach_engine.orchestrator import LeadGenerationOrchestrator
@@ -304,7 +304,7 @@ HTML = """<!doctype html>
             <span class="micro">Prompt / Run</span>
           </div>
           <form onsubmit="runCampaign(event)">
-            <textarea name="prompt">Find me leads in Finland for restaurant businesses looking for voice AI capabilities</textarea>
+            <textarea name="prompt">Find me leads in Finland for service businesses looking for voice AI capabilities</textarea>
             <div class="actions">
               <button type="button" onclick="planCampaign()">Plan Only</button>
               <button class="primary">Run Capped</button>
@@ -364,7 +364,7 @@ HTML = """<!doctype html>
   <script>
     const stages = ['new','linkedin_searched','contacted','follow_up_due','replied','not_fit','won','lost'];
     const filters = ['all','qualified','manual_review','needs_input','rejected'];
-    let state = { campaigns: [], dossiers: [], clarifications: [], provider_errors: [], leads: [], scores: [], buyer_signals: [], solution_assessments: [], source_plans: [], settings: {} };
+    let state = { campaigns: [], campaign_specs: [], dossiers: [], clarifications: [], provider_errors: [], leads: [], scores: [], buyer_signals: [], solution_assessments: [], source_plans: [], evidence_packs: [], lead_assessments: [], market_contexts: [], settings: {} };
     let activeFilter = 'all';
     let selectedCampaignId = null;
     let selectedId = null;
@@ -497,6 +497,9 @@ HTML = """<!doctype html>
       const score = scoreFor(d.lead_id) || {};
       const signals = state.buyer_signals.filter(s => s.lead_id === d.lead_id);
       const solution = state.solution_assessments.find(s => s.lead_id === d.lead_id);
+      const evidencePack = state.evidence_packs.find(p => p.lead_id === d.lead_id);
+      const assessment = state.lead_assessments.find(a => a.lead_id === d.lead_id);
+      const market = state.market_contexts.find(m => m.lead_id === d.lead_id);
       document.querySelector('#drawer').innerHTML = `
         <div class="detail-head">
           <span class="status-pill status-${esc(d.status)}">${esc(d.status)}</span>
@@ -534,6 +537,9 @@ HTML = """<!doctype html>
         </div>
         <div class="detail-block">
           <div class="micro">Bulky Data</div>
+          ${assessment ? `<details><summary>Lead Assessment</summary><pre>${esc(JSON.stringify(assessment, null, 2))}</pre></details>` : ''}
+          ${evidencePack ? `<details><summary>Evidence Pack</summary><pre>${esc(JSON.stringify(evidencePack, null, 2))}</pre></details>` : ''}
+          ${market ? `<details><summary>Market Context</summary><pre>${esc(JSON.stringify(market, null, 2))}</pre></details>` : ''}
           <details><summary>Score Rubric</summary><pre>${esc(JSON.stringify(score, null, 2))}</pre></details>
           <details><summary>Lead Memory</summary><pre>${esc(JSON.stringify(lead, null, 2))}</pre></details>
           <details><summary>Dossier Raw</summary><pre>${esc(JSON.stringify(d, null, 2))}</pre></details>
@@ -583,7 +589,7 @@ HTML = """<!doctype html>
       });
       const result = await response.json();
       document.querySelector('#run-status').textContent =
-        `Plan: ${(result.campaign.countries || []).join(', ')} / ${(result.campaign.industries || []).join(', ')} / ${result.active_search_providers.join(' + ')}`;
+        `Spec: ${(result.campaign.countries || []).join(', ')} / ${(result.campaign.industries || []).join(', ')} / ${(result.campaign_spec.source_priorities || result.active_search_providers).join(' + ')}`;
     }
 
     async function runCampaign(event) {
@@ -620,9 +626,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(
                 {
                     "campaigns": self.store.read_collection("campaigns"),
+                    "campaign_specs": self.store.read_collection("campaign_specs"),
                     "leads": self.store.read_collection("leads"),
                     "scores": self.store.read_collection("scores"),
                     "dossiers": self.store.read_collection("dossiers"),
+                    "evidence_packs": self.store.read_collection("evidence_packs"),
+                    "lead_assessments": self.store.read_collection("lead_assessments"),
+                    "market_contexts": self.store.read_collection("market_contexts"),
                     "buyer_signals": self.store.read_collection("buyer_signals"),
                     "solution_assessments": self.store.read_collection("solution_assessments"),
                     "source_plans": self.store.read_collection("source_plans"),
@@ -650,12 +660,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not prompt:
                 self._json({"error": "prompt is required"}, status=400)
                 return
-            campaign = IcpPlannerAgent().plan(prompt)
+            campaign, spec = CampaignStrategyAgent().plan(prompt)
             search_provider = build_search_provider(self.settings)
             crawl_provider = build_crawl_provider(self.settings)
             self._json(
                 {
                     "campaign": to_jsonable(campaign),
+                    "campaign_spec": to_jsonable(spec),
                     "active_search_providers": [
                         type(provider).__name__
                         for provider in getattr(search_provider, "providers", [search_provider])
@@ -674,7 +685,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not prompt:
                 self._json({"error": "prompt is required"}, status=400)
                 return
-            campaign = IcpPlannerAgent().plan(prompt)
+            campaign, spec = CampaignStrategyAgent().plan(prompt)
 
             def record_provider_error(error) -> None:
                 self.store.upsert("provider_errors", to_jsonable(error))
@@ -687,10 +698,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 store=self.store,
                 max_candidates_per_run=self.settings.max_candidates_per_run,
                 max_deep_analysis_per_run=self.settings.max_deep_analysis_per_run,
-            ).run_campaign(campaign)
+            ).run_campaign(campaign, spec)
             self._json(
                 {
                     "campaign": to_jsonable(result.campaign),
+                    "campaign_spec": to_jsonable(result.spec),
                     "dossiers": to_jsonable(result.dossiers),
                     "questions": to_jsonable(result.questions),
                 }

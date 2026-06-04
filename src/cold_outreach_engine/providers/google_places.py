@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from cold_outreach_engine.models import CampaignContext
+from cold_outreach_engine.models import CampaignContext, CampaignSpec
 from cold_outreach_engine.providers.base import CandidateCompany
 
 
@@ -13,7 +13,9 @@ class GooglePlacesProvider:
         self.api_key = api_key
         self.max_results_per_query = max_results_per_query
 
-    def search_companies(self, campaign: CampaignContext) -> list[CandidateCompany]:
+    def search_companies(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> list[CandidateCompany]:
         candidates: list[CandidateCompany] = []
         headers = {
             "X-Goog-Api-Key": self.api_key,
@@ -23,7 +25,7 @@ class GooglePlacesProvider:
             ),
         }
         with httpx.Client(timeout=20) as client:
-            for query in self._queries_for(campaign):
+            for query in self._queries_for(campaign, spec):
                 response = client.post(
                     self.endpoint,
                     headers=headers,
@@ -50,10 +52,13 @@ class GooglePlacesProvider:
                     )
         return candidates
 
-    def _queries_for(self, campaign: CampaignContext) -> list[str]:
+    def _queries_for(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> list[str]:
+        if spec and spec.search_queries:
+            return spec.search_queries[:6]
         queries = []
         for country in campaign.countries:
             for industry in campaign.industries:
-                queries.append(f"{industry} in {country}")
+                queries.append(f"{industry} {country}")
         return queries[:6]
-

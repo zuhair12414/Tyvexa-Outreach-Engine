@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from cold_outreach_engine.models import CampaignContext
+from cold_outreach_engine.models import CampaignContext, CampaignSpec
 from cold_outreach_engine.providers.base import CandidateCompany, PageSnapshot
 
 
 class SampleSearchProvider:
     """Local provider used until API keys are supplied."""
 
-    def search_companies(self, campaign: CampaignContext) -> list[CandidateCompany]:
+    def search_companies(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> list[CandidateCompany]:
         country = campaign.countries[0] if campaign.countries else "UAE"
         industry = campaign.industries[0] if campaign.industries else "customer service"
         city = "Helsinki" if country == "Finland" else "Dubai"
@@ -21,7 +23,7 @@ class SampleSearchProvider:
                 source_url="sample://provider",
                 snippets=[
                     "Growing business with public service pages and visible phone contact flow.",
-                    "Reviews mention slow response and difficulty reaching the team.",
+                    f"Campaign signal example: {(spec.pain_hypotheses[0] if spec else 'slow response')}.",
                 ],
             ),
             CandidateCompany(
@@ -46,7 +48,7 @@ class SampleCrawlProvider:
                 title=f"{company.name} homepage",
                 text=(
                     "Public website lists services, phone number, WhatsApp button, "
-                    "manual contact form, no visible voice AI, and no advanced booking flow."
+                    "manual contact form, and no clearly visible mature automation platform."
                 ),
             )
         ]

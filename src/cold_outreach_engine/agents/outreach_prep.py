@@ -3,11 +3,13 @@ from __future__ import annotations
 from cold_outreach_engine.models import (
     BuyerSignal,
     CampaignContext,
+    CampaignSpec,
     DossierClaim,
+    LeadAssessment,
     LeadDossier,
     LeadMemory,
-    LeadScore,
     LeadStatus,
+    MarketContext,
     SolutionAssessment,
 )
 
@@ -18,14 +20,15 @@ class OutreachPrepAgent:
     def run(
         self,
         campaign: CampaignContext,
+        spec: CampaignSpec,
         lead: LeadMemory,
-        score: LeadScore,
-        competitor_gap: str,
-        solution_assessment: SolutionAssessment,
-        buyer_signals: list[BuyerSignal],
+        assessment: LeadAssessment,
+        market_context: MarketContext,
     ) -> LeadDossier:
-        persona = self._persona_for(lead.industry)
-        status = score.status
+        persona = self._persona_for(spec, lead.industry)
+        status = assessment.status
+        solution_assessment = assessment.solution
+        buyer_signals = assessment.buyer_signals
 
         claims = self._claims_for(lead, buyer_signals, solution_assessment)
         evidence_summary = [
@@ -33,8 +36,8 @@ class OutreachPrepAgent:
             for claim in claims
         ]
         flow_label = self._flow_label(solution_assessment)
-        if score.status == LeadStatus.REJECTED:
-            opening = f"No outreach recommended. {score.reject_reason or 'Lead failed qualification rubric.'}"
+        if assessment.status == LeadStatus.REJECTED:
+            opening = f"No outreach recommended. {assessment.reject_reason or 'Lead failed qualification rubric.'}"
         else:
             opening = (
                 f"Hi, noticed {lead.company_name} may still rely on {flow_label}. "
@@ -46,10 +49,10 @@ class OutreachPrepAgent:
             lead_id=lead.id,
             company_name=lead.company_name,
             status=status,
-            score=score.total,
-            why_this_lead="; ".join(score.reasons),
+            score=assessment.score,
+            why_this_lead="; ".join(assessment.reasons),
             evidence_summary=evidence_summary,
-            competitor_gap=competitor_gap,
+            competitor_gap=market_context.summary,
             solution_assessment=(
                 f"{solution_assessment.status.value}: {solution_assessment.outreach_implication}"
             ),
@@ -96,17 +99,8 @@ class OutreachPrepAgent:
             return "a publicly unclear customer intake flow"
         return solution.solution_type
 
-    def _persona_for(self, industry: str | None) -> str:
-        if not industry:
-            return "Founder, owner, operations manager, or customer service manager"
-        lower = industry.lower()
-        if "restaurant" in lower:
-            return (
-                "Single location: owner or general manager; group: operations manager, "
-                "COO, or reservations manager"
-            )
-        if "bpo" in lower or "customer" in lower:
-            return "VP operations, head of customer support, contact center manager, or CTO"
-        if "insurance" in lower:
-            return "Operations manager, claims manager, or customer experience lead"
-        return "Founder, owner, manager, or operations lead"
+    def _persona_for(self, spec: CampaignSpec, industry: str | None) -> str:
+        personas = spec.buyer_personas or ["founder", "owner", "operations manager"]
+        if industry:
+            return f"{', '.join(personas[:4])} for {industry}"
+        return ", ".join(personas[:4])

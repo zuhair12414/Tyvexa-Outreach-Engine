@@ -1,27 +1,17 @@
 from __future__ import annotations
 
-from cold_outreach_engine.models import CampaignContext, Evidence, LeadMemory
+from cold_outreach_engine.models import CampaignContext, LeadMemory
 
 
 class CompetitorGapAgent:
+    """Compatibility placeholder. Use MarketContextAgent for the active pipeline."""
+
     name = "competitor_gap_agent"
 
     def run(self, campaign: CampaignContext, lead: LeadMemory) -> str:
-        if not lead.city or not lead.industry:
-            lead.open_questions.append("Local competitor comparison needs city and industry.")
-            return "unknown: missing locality or industry"
-
-        claim = (
-            f"Competitor gap should be checked against nearby {lead.industry} businesses in "
-            f"{lead.city}; v1 placeholder until search provider is connected."
+        locality = ", ".join(part for part in [lead.city, lead.country] if part)
+        target = lead.industry or ", ".join(campaign.industries)
+        return (
+            "needs_enrichment: market context should compare "
+            f"{lead.company_name} against {target} alternatives in {locality or 'the campaign market'}."
         )
-        lead.evidence.append(
-            Evidence(
-                claim=claim,
-                source_url="system://competitor-gap-placeholder",
-                agent=self.name,
-                confidence=0.3,
-            )
-        )
-        return "placeholder_gap: compare local competitors once web search is enabled"
-

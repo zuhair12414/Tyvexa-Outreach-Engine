@@ -1,14 +1,37 @@
 from __future__ import annotations
 
-from cold_outreach_engine.models import CampaignContext, ClarificationQuestion, LeadMemory, LeadScore, LeadStatus
+from cold_outreach_engine.models import (
+    CampaignContext,
+    CampaignSpec,
+    ClarificationQuestion,
+    LeadAssessment,
+    LeadMemory,
+    LeadScore,
+    LeadStatus,
+)
 
 
 class ClarificationAgent:
     name = "clarification_agent"
 
     def run(
-        self, campaign: CampaignContext, lead: LeadMemory, score: LeadScore
+        self,
+        campaign: CampaignContext,
+        lead: LeadMemory,
+        score: LeadScore | LeadAssessment,
+        spec: CampaignSpec | None = None,
     ) -> ClarificationQuestion | None:
+        if spec and "unspecified" in " ".join(spec.countries + spec.target_industries).lower():
+            return ClarificationQuestion(
+                campaign_id=campaign.id,
+                lead_id=None,
+                scope="campaign_wide",
+                question=(
+                    "The campaign target is underspecified. Which country, region, "
+                    "or buyer segment should this run prioritize?"
+                ),
+            )
+
         if score.status == LeadStatus.NEEDS_INPUT:
             return ClarificationQuestion(
                 campaign_id=campaign.id,
@@ -32,4 +55,3 @@ class ClarificationAgent:
             )
 
         return None
-

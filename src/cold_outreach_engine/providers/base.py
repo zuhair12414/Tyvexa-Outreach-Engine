@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from cold_outreach_engine.models import CampaignContext
+from cold_outreach_engine.models import CampaignContext, CampaignSpec
 
 
 @dataclass
@@ -25,7 +25,9 @@ class PageSnapshot:
 
 
 class SearchProvider(Protocol):
-    def search_companies(self, campaign: CampaignContext) -> list[CandidateCompany]:
+    def search_companies(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> list[CandidateCompany]:
         """Return candidate companies. This must not scrape LinkedIn."""
 
 
@@ -37,4 +39,3 @@ class CrawlProvider(Protocol):
 class LlmProvider(Protocol):
     def classify(self, task: str, payload: dict) -> dict:
         """Return structured classification JSON for an agent task."""
-

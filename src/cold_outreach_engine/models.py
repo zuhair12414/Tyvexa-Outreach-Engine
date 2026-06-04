@@ -78,6 +78,42 @@ class BuyerSignal:
 
 
 @dataclass
+class CampaignSpec:
+    campaign_id: str
+    target_industries: list[str]
+    countries: list[str]
+    offer: str
+    pain_hypotheses: list[str]
+    good_lead_traits: list[str]
+    reject_rules: list[str]
+    source_priorities: list[str]
+    search_queries: list[str]
+    evidence_requirements: list[str]
+    buyer_personas: list[str]
+    scoring_rubric: dict[str, int]
+    clarification_triggers: list[str]
+    confidence_notes: list[str] = field(default_factory=list)
+    version: str = "dynamic_spec_v1"
+    id: str = field(default_factory=lambda: f"spec_{uuid4().hex[:10]}")
+    created_at: str = field(default_factory=utc_now)
+
+
+@dataclass
+class EvidencePack:
+    campaign_id: str
+    lead_id: str
+    facts: list[str]
+    page_urls: list[str]
+    contact_markers: list[str]
+    pain_markers: list[str]
+    solution_markers: list[str]
+    evidence_ids: list[str]
+    gaps: list[str] = field(default_factory=list)
+    id: str = field(default_factory=lambda: f"epack_{uuid4().hex[:10]}")
+    created_at: str = field(default_factory=utc_now)
+
+
+@dataclass
 class SolutionAssessment:
     lead_id: str
     status: SolutionStatus
@@ -86,6 +122,36 @@ class SolutionAssessment:
     outreach_implication: str
     evidence_ids: list[str]
     id: str = field(default_factory=lambda: f"sol_{uuid4().hex[:10]}")
+
+
+@dataclass
+class LeadAssessment:
+    campaign_id: str
+    lead_id: str
+    status: LeadStatus
+    score: int
+    reasons: list[str]
+    reject_reason: str | None
+    buyer_signals: list[BuyerSignal]
+    solution: SolutionAssessment
+    component_scores: dict[str, int]
+    evidence_ids: list[str]
+    rubric_version: str = "dynamic_assessment_v1"
+    id: str = field(default_factory=lambda: f"assess_{uuid4().hex[:10]}")
+    created_at: str = field(default_factory=utc_now)
+
+
+@dataclass
+class MarketContext:
+    campaign_id: str
+    lead_id: str
+    summary: str
+    local_competitor_queries: list[str]
+    gap_hypotheses: list[str]
+    evidence_ids: list[str]
+    status: str = "needs_enrichment"
+    id: str = field(default_factory=lambda: f"market_{uuid4().hex[:10]}")
+    created_at: str = field(default_factory=utc_now)
 
 
 @dataclass

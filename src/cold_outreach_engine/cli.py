@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from cold_outreach_engine.agents.icp_planner import IcpPlannerAgent
+from cold_outreach_engine.agents.campaign_strategy import CampaignStrategyAgent
 from cold_outreach_engine.config import load_settings
 from cold_outreach_engine.models import CampaignContext, ProviderError, to_jsonable
 from cold_outreach_engine.orchestrator import LeadGenerationOrchestrator
@@ -15,12 +15,12 @@ def sample_run() -> None:
     settings = load_settings()
     store = JsonStore(settings.data_dir)
     campaign = CampaignContext(
-        prompt="Find dynamic voice AI prospects based on the supplied ICP.",
-        offer="voice AI for missed calls, reservations, and customer support",
+        prompt="Find dynamic prospects based on the supplied ICP.",
+        offer="voice AI capabilities for high-volume customer conversations",
         countries=["UAE", "Saudi Arabia", "Qatar"],
-        industries=["restaurants", "BPO", "customer service"],
+        industries=["service businesses", "operations-heavy companies"],
         ideal_company="public documentation available and growing business",
-        pain_signals=["weak reachout methods", "slow response", "reviews around weak responses"],
+        pain_signals=["weak reachout methods", "slow response", "manual phone intake"],
         reject_rules=["no socials plus no website", "shady business", "no proper services"],
     )
     orchestrator = LeadGenerationOrchestrator(
@@ -36,7 +36,7 @@ def sample_run() -> None:
 
 def plan_prompt(prompt: str) -> None:
     settings = load_settings()
-    campaign = IcpPlannerAgent().plan(prompt)
+    campaign, spec = CampaignStrategyAgent().plan(prompt)
     search_provider = build_search_provider(settings)
     crawl_provider = build_crawl_provider(settings)
     providers = [type(p).__name__ for p in getattr(search_provider, "providers", [search_provider])]
@@ -46,6 +46,7 @@ def plan_prompt(prompt: str) -> None:
             {
                 "mode": "plan_only_no_api_calls",
                 "campaign": to_jsonable(campaign),
+                "campaign_spec": to_jsonable(spec),
                 "active_search_providers": providers,
                 "active_crawl_provider": type(crawl_provider).__name__,
                 "caps": {
@@ -64,7 +65,7 @@ def run_prompt(prompt: str, approved: bool) -> None:
 
     settings = load_settings()
     store = JsonStore(settings.data_dir)
-    campaign = IcpPlannerAgent().plan(prompt)
+    campaign, spec = CampaignStrategyAgent().plan(prompt)
 
     provider_errors: list[ProviderError] = []
 
@@ -79,7 +80,7 @@ def run_prompt(prompt: str, approved: bool) -> None:
         max_candidates_per_run=settings.max_candidates_per_run,
         max_deep_analysis_per_run=settings.max_deep_analysis_per_run,
     )
-    result = orchestrator.run_campaign(campaign)
+    result = orchestrator.run_campaign(campaign, spec)
     statuses: dict[str, int] = {}
     for dossier in result.dossiers:
         statuses[dossier.status.value] = statuses.get(dossier.status.value, 0) + 1
@@ -87,6 +88,7 @@ def run_prompt(prompt: str, approved: bool) -> None:
         json.dumps(
             {
                 "campaign_id": result.campaign.id,
+                "spec_id": result.spec.id,
                 "processed_leads": len(result.leads),
                 "dossiers": len(result.dossiers),
                 "open_questions": len(result.questions),

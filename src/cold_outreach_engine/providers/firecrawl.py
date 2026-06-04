@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from cold_outreach_engine.models import CampaignContext
+from cold_outreach_engine.models import CampaignContext, CampaignSpec
 from cold_outreach_engine.providers.base import CandidateCompany, PageSnapshot
 
 
@@ -26,10 +26,12 @@ class FirecrawlSearchProvider:
         self.api_key = api_key
         self.max_results_per_query = max_results_per_query
 
-    def search_companies(self, campaign: CampaignContext) -> list[CandidateCompany]:
+    def search_companies(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> list[CandidateCompany]:
         candidates: list[CandidateCompany] = []
         with httpx.Client(timeout=30) as client:
-            for query in self._queries_for(campaign):
+            for query in self._queries_for(campaign, spec):
                 response = client.post(
                     self.endpoint,
                     headers={
@@ -66,12 +68,16 @@ class FirecrawlSearchProvider:
                     )
         return candidates
 
-    def _queries_for(self, campaign: CampaignContext) -> list[str]:
+    def _queries_for(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> list[str]:
+        if spec and spec.search_queries:
+            return spec.search_queries[:6]
         queries = []
         for country in campaign.countries:
             for industry in campaign.industries:
-                queries.append(f"{industry} {country} official website contact phone")
-                queries.append(f"{industry} {country} reservations support customer service")
+                queries.append(f"{industry} {country} official website contact")
+                queries.append(f"{industry} {country} {campaign.offer}")
         return queries[:6]
 
     def _results_from(self, data: dict) -> list[dict]:
@@ -93,12 +99,8 @@ class FirecrawlSearchProvider:
         generic = {
             "contact",
             "contact us",
-            "restaurants",
-            "restaurant",
-            "reservations",
-            "reservation",
-            "booking",
-            "book a table",
+            "about us",
+            "services",
             "menu",
         }
         meaningful = [part for part in parts if part.lower() not in generic]

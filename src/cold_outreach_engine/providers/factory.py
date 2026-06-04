@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 
 from cold_outreach_engine.config import Settings
-from cold_outreach_engine.models import CampaignContext, ProviderError, to_jsonable
+from cold_outreach_engine.models import CampaignContext, CampaignSpec, ProviderError
 from cold_outreach_engine.providers.base import CandidateCompany, CrawlProvider, SearchProvider
 from cold_outreach_engine.providers.brave_search import BraveSearchProvider
 from cold_outreach_engine.providers.firecrawl import FirecrawlProvider, FirecrawlSearchProvider
@@ -16,11 +16,13 @@ class CompositeSearchProvider:
         self.providers = providers
         self.error_sink = error_sink
 
-    def search_companies(self, campaign: CampaignContext) -> list[CandidateCompany]:
+    def search_companies(
+        self, campaign: CampaignContext, spec: CampaignSpec | None = None
+    ) -> list[CandidateCompany]:
         candidates: list[CandidateCompany] = []
         for provider in self.providers:
             try:
-                candidates.extend(provider.search_companies(campaign))
+                candidates.extend(provider.search_companies(campaign, spec))
             except httpx.HTTPStatusError as exc:
                 body = exc.response.text[:500] if exc.response is not None else ""
                 self._record_error(
