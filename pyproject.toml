@@ -1,0 +1,23 @@
+[project]
+name = "cold-outreach-engine"
+version = "0.1.0"
+description = "Dynamic agentic lead generation engine with campaign memory, evidence-bound scoring, and follow-up tracking."
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27.0",
+  "pydantic>=2.7.0",
+  "python-dotenv>=1.0.1",
+  "fastapi>=0.111.0",
+  "uvicorn>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "ruff>=0.5.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
