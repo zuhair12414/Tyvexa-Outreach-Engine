@@ -36,7 +36,7 @@ Provider roles:
 
 - `GOOGLE_PLACES_API_KEY`: local-business discovery, especially restaurants and other location-based companies.
 - `BRAVE_SEARCH_API_KEY`: broader web/company discovery for BPOs, service companies, insurance, and niche campaigns.
-- `FIRECRAWL_API_KEY`: website extraction for qualification, solution detection, and buyer-signal evidence.
+- `FIRECRAWL_API_KEY`: web search fallback plus website extraction for qualification, solution detection, and buyer-signal evidence.
 - `OPENAI_API_KEY`: planned structured classification and prompt-to-rubric improvements.
 
 Cost guards:
