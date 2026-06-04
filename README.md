@@ -20,6 +20,18 @@ PYTHONPATH=src python3 -m cold_outreach_engine.dashboard
 
 Then open `http://127.0.0.1:8088`.
 
+Plan a real prompt without spending provider credits:
+
+```bash
+PYTHONPATH=src python3 -m cold_outreach_engine.cli plan "Find me leads in Finland for restaurant businesses looking for voice AI capabilities"
+```
+
+Run external providers only when you explicitly approve it:
+
+```bash
+PYTHONPATH=src python3 -m cold_outreach_engine.cli run "Find me leads in Finland for restaurant businesses looking for voice AI capabilities" --yes
+```
+
 ## Real API Keys Later
 
 Copy `.env.example` to `.env` and add:
