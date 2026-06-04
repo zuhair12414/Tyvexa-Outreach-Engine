@@ -141,6 +141,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 search_provider=build_search_provider(self.settings),
                 crawl_provider=build_crawl_provider(self.settings),
                 store=self.store,
+                max_candidates_per_run=self.settings.max_candidates_per_run,
+                max_deep_analysis_per_run=self.settings.max_deep_analysis_per_run,
             ).run_campaign(campaign)
             self._json(
                 {

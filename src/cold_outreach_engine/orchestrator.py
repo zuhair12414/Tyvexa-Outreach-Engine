@@ -37,6 +37,8 @@ class LeadGenerationOrchestrator:
         search_provider: SearchProvider,
         crawl_provider: CrawlProvider,
         store: JsonStore,
+        max_candidates_per_run: int = 50,
+        max_deep_analysis_per_run: int = 20,
     ) -> None:
         self.discovery = LeadDiscoveryAgent(search_provider)
         self.source_router = SourceRouterAgent()
@@ -49,17 +51,20 @@ class LeadGenerationOrchestrator:
         self.clarification = ClarificationAgent()
         self.outreach_prep = OutreachPrepAgent()
         self.store = store
+        self.max_candidates_per_run = max_candidates_per_run
+        self.max_deep_analysis_per_run = max_deep_analysis_per_run
 
     def run_campaign(self, campaign: CampaignContext) -> RunResult:
         self.store.upsert("campaigns", to_jsonable(campaign))
         source_plan = self.source_router.run(campaign)
         self.store.upsert("source_plans", to_jsonable(source_plan))
 
-        leads = self.deduper.run(self.discovery.run(campaign))
+        leads = self.deduper.run(self.discovery.run(campaign))[: self.max_candidates_per_run]
+        leads_to_process = leads[: self.max_deep_analysis_per_run]
         dossiers: list[LeadDossier] = []
         questions: list[ClarificationQuestion] = []
 
-        for lead in leads:
+        for lead in leads_to_process:
             lead, _profile_score = self.qualification.run(campaign, lead)
             buyer_signals = self.buyer_signal.run(campaign, lead)
             solution = self.existing_solution.run(lead)
@@ -81,4 +86,4 @@ class LeadGenerationOrchestrator:
             self.store.upsert("scores", to_jsonable(score))
             self.store.upsert("dossiers", to_jsonable(dossier))
 
-        return RunResult(campaign=campaign, leads=leads, dossiers=dossiers, questions=questions)
+        return RunResult(campaign=campaign, leads=leads_to_process, dossiers=dossiers, questions=questions)

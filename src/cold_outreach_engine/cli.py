@@ -26,6 +26,8 @@ def sample_run() -> None:
         search_provider=build_search_provider(settings),
         crawl_provider=build_crawl_provider(settings),
         store=store,
+        max_candidates_per_run=settings.max_candidates_per_run,
+        max_deep_analysis_per_run=settings.max_deep_analysis_per_run,
     )
     result = orchestrator.run_campaign(campaign)
     print(json.dumps(to_jsonable(result), indent=2))

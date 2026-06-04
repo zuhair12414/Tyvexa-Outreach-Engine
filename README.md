@@ -39,6 +39,12 @@ Provider roles:
 - `FIRECRAWL_API_KEY`: website extraction for qualification, solution detection, and buyer-signal evidence.
 - `OPENAI_API_KEY`: planned structured classification and prompt-to-rubric improvements.
 
+Cost guards:
+
+- `LEADGEN_MAX_CANDIDATES_PER_RUN` caps candidates after dedupe.
+- `LEADGEN_MAX_DEEP_ANALYSIS_PER_RUN` caps website crawls and dossier generation.
+- Keep these low for the first real runs, for example `20` candidates and `5` deep analyses.
+
 ## Non-Negotiable Rules
 
 - No LinkedIn scraping or automation. The engine only prepares manual LinkedIn outreach context.
