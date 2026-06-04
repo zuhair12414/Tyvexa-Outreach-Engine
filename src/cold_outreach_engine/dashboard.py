@@ -49,10 +49,10 @@ HTML = """<!doctype html>
       background-size: 96px 96px, 96px 96px, auto, auto;
       color: var(--text);
       font-family: var(--sans);
-      overflow: hidden;
+      overflow: auto;
     }
 
-    .shell { height: 100vh; display: grid; grid-template-rows: 74px 1fr; }
+    .shell { min-width: 1380px; height: 100vh; display: grid; grid-template-rows: 74px 1fr; }
     .topbar {
       display: grid;
       grid-template-columns: 260px 1fr 440px;
@@ -84,16 +84,19 @@ HTML = """<!doctype html>
 
     .workspace {
       display: grid;
-      grid-template-columns: 300px minmax(560px, 1fr) 430px;
+      grid-template-columns: minmax(760px, 1fr) 300px 430px;
       height: calc(100vh - 74px);
       border-left: 1px solid var(--line);
     }
     aside, main, .drawer { min-height: 0; overflow: auto; }
     aside, .drawer { background: rgba(9, 10, 11, .58); }
-    aside { border-right: 1px solid var(--line); }
+    aside { grid-column: 2; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
     main { border-right: 1px solid var(--line); }
+    .flow-main { grid-column: 1; grid-row: 1; }
+    .drawer { grid-column: 3; grid-row: 1; }
     .panel { border-bottom: 1px solid var(--line); padding: 18px; }
     .panel.tight { padding: 14px 18px; }
+    .flow-main { background: rgba(7, 8, 9, .28); }
     .panel-title {
       display: flex;
       align-items: center;
@@ -119,6 +122,15 @@ HTML = """<!doctype html>
     }
     textarea:focus, select:focus { border-color: rgba(255,255,255,.44); }
     textarea { min-height: 118px; resize: vertical; }
+    .command-textarea {
+      min-height: 132px;
+      font-size: 15px;
+      line-height: 1.55;
+      background: rgba(0,0,0,.18);
+      border-color: rgba(255,255,255,.12);
+      border-radius: 12px;
+      font-family: var(--sans);
+    }
     button {
       border: 1px solid var(--line-strong);
       background: rgba(255,255,255,.04);
@@ -207,6 +219,139 @@ HTML = """<!doctype html>
     .copy { font-size: 13px; line-height: 1.45; color: #d6dad6; }
     .url { color: var(--muted); font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+    .command-stage {
+      padding: 34px 42px 28px;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.055), transparent 72%),
+        rgba(255,255,255,.018);
+    }
+    .command-stage h1 {
+      max-width: 880px;
+      font-size: clamp(36px, 4vw, 58px);
+    }
+    .command-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      margin-top: 22px;
+      max-width: 980px;
+      align-items: stretch;
+    }
+    .command-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,.025);
+      padding: 16px;
+      min-width: 0;
+    }
+    .composer-card {
+      background: rgba(17, 19, 21, .82);
+      border-color: rgba(255,255,255,.2);
+      box-shadow: 0 20px 60px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.04);
+    }
+    .response-card {
+      background: rgba(255,255,255,.018);
+      border-color: rgba(255,255,255,.1);
+    }
+    .prompt-readout {
+      min-height: 68px;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 12px;
+      padding: 13px;
+      background: rgba(0,0,0,.22);
+      font: 14px/1.55 var(--sans);
+      color: #eef1ee;
+      white-space: pre-wrap;
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 9px;
+      font: 10px var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: #d7dad7;
+      background: rgba(255,255,255,.026);
+    }
+    .agent-board {
+      padding: 24px 42px;
+      border-bottom: 1px solid var(--line);
+    }
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(300px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+      max-width: 1180px;
+    }
+    .agent-card {
+      position: relative;
+      min-height: 190px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.024);
+      padding: 14px;
+      overflow: hidden;
+    }
+    .agent-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: var(--dim);
+    }
+    .agent-card.ready::before { background: var(--good); }
+    .agent-card.waiting::before { background: var(--warn); }
+    .agent-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .agent-index {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font: 11px var(--mono);
+      color: var(--muted);
+      flex: 0 0 auto;
+    }
+    .agent-card h3 { font-size: 15px; }
+    .agent-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .agent-list li {
+      border-top: 1px solid rgba(255,255,255,.08);
+      padding-top: 8px;
+      font: 12px/1.45 var(--mono);
+      color: #cfd4cf;
+    }
+    .lead-section {
+      padding: 24px 42px 34px;
+    }
+    .lead-section .lead-table {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,255,255,.018);
+      margin-top: 12px;
+    }
+
     .drawer-empty {
       height: 100%;
       display: grid;
@@ -263,16 +408,7 @@ HTML = """<!doctype html>
     }
     .run-status { margin-top: 10px; min-height: 18px; }
 
-    @media (max-width: 1180px) {
-      body { overflow: auto; }
-      .shell { height: auto; min-height: 100vh; }
-      .topbar { grid-template-columns: 1fr; gap: 14px; padding: 16px; }
-      .brand, .nav { padding: 0; }
-      .agent-pill { justify-self: stretch; min-width: 0; }
-      .workspace { grid-template-columns: 1fr; height: auto; }
-      .lead-row { grid-template-columns: 1fr; }
-      .lead-row.header { display: none; }
-    }
+    .filters { margin-top: 14px; }
   </style>
 </head>
 <body>
@@ -298,19 +434,12 @@ HTML = """<!doctype html>
 
     <div class="workspace">
       <aside>
-        <section class="panel">
+        <section class="panel tight">
           <div class="panel-title">
-            <h2>Campaign Console</h2>
-            <span class="micro">Prompt / Run</span>
+            <h2>Campaigns</h2>
+            <span class="micro" id="campaign-count">00</span>
           </div>
-          <form onsubmit="runCampaign(event)">
-            <textarea name="prompt">Find me leads in Finland for service businesses looking for voice AI capabilities</textarea>
-            <div class="actions">
-              <button type="button" onclick="planCampaign()">Plan Only</button>
-              <button class="primary">Run Capped</button>
-            </div>
-            <div id="run-status" class="micro run-status"></div>
-          </form>
+          <div id="campaigns"></div>
         </section>
 
         <section class="panel tight">
@@ -323,14 +452,6 @@ HTML = """<!doctype html>
 
         <section class="panel tight">
           <div class="panel-title">
-            <h2>Campaigns</h2>
-            <span class="micro" id="campaign-count">00</span>
-          </div>
-          <div id="campaigns"></div>
-        </section>
-
-        <section class="panel tight">
-          <div class="panel-title">
             <h2>Open Questions</h2>
             <span class="micro" id="question-count">00</span>
           </div>
@@ -338,23 +459,53 @@ HTML = """<!doctype html>
         </section>
       </aside>
 
-      <main>
-        <section class="panel">
-          <div class="micro">Tyvexa / Lead Generation</div>
-          <h1>Lead Command Center</h1>
-          <p class="copy muted" style="max-width: 680px; margin-top: 16px;">Scan qualified targets, inspect evidence, review bulky source data, and keep a clean slot for lead progress once the outreach workflow lands.</p>
+      <main class="flow-main">
+        <section class="command-stage">
+          <div class="micro">Tyvexa / Prompt Operating Room</div>
+          <h1>Prompt To Agent Workbench</h1>
+          <div class="command-grid">
+            <div class="command-card composer-card">
+              <div class="panel-title">
+                <h2>Ask The Engine</h2>
+                <span class="micro">Prompt In</span>
+              </div>
+              <form onsubmit="runCampaign(event)">
+                <textarea class="command-textarea" name="prompt" placeholder="Find me leads in [market] for [business type] looking for [capability]...">Find me leads in Finland for service businesses looking for voice AI capabilities</textarea>
+                <div class="actions">
+                  <button type="button" onclick="planCampaign()">Plan Only</button>
+                  <button class="primary">Run Capped</button>
+                </div>
+                <div id="run-status" class="micro run-status"></div>
+              </form>
+            </div>
+            <div class="command-card response-card">
+              <div class="panel-title">
+                <h2>Engine Interpretation</h2>
+                <span class="micro" id="selected-campaign-label">No Run</span>
+              </div>
+              <div id="prompt-readout" class="prompt-readout">No campaign selected yet.</div>
+              <div id="prompt-chips" class="chip-row"></div>
+            </div>
+          </div>
         </section>
-        <section class="panel tight">
-          <div class="stat-grid" id="stats"></div>
+
+        <section class="agent-board">
+          <div class="panel-title">
+            <h2>Agent Contributions</h2>
+            <span class="micro" id="agent-count">00</span>
+          </div>
+          <div id="agent-trace" class="agent-grid"></div>
         </section>
-        <section class="panel tight">
+
+        <section class="lead-section">
           <div class="panel-title">
             <h2>Lead Dossiers</h2>
             <span class="micro" id="lead-count">00</span>
           </div>
+          <div class="stat-grid" id="stats"></div>
           <div class="filters" id="filters"></div>
+          <section class="lead-table" id="lead-table"></section>
         </section>
-        <section class="lead-table" id="lead-table"></section>
       </main>
 
       <aside class="drawer" id="drawer"></aside>
@@ -368,6 +519,7 @@ HTML = """<!doctype html>
     let activeFilter = 'all';
     let selectedCampaignId = null;
     let selectedId = null;
+    let previewPlan = null;
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const short = (value, max = 42) => {
@@ -387,6 +539,7 @@ HTML = """<!doctype html>
       if (!selectedId || !visible.some(d => d.id === selectedId)) {
         selectedId = visible.length ? visible[0].id : null;
       }
+      syncPromptInputFromSelection();
       render();
     }
 
@@ -394,6 +547,8 @@ HTML = """<!doctype html>
       renderProviders();
       renderCampaigns();
       renderQuestions();
+      renderPromptSummary();
+      renderAgentTrace();
       renderStats();
       renderFilters();
       renderLeads();
@@ -447,6 +602,106 @@ HTML = """<!doctype html>
       ].map(([label, value]) => `<div class="stat"><b>${fmt(value)}</b><span class="micro">${label}</span></div>`).join('');
     }
 
+    function renderPromptSummary() {
+      const campaign = currentCampaign();
+      const spec = currentSpec();
+      document.querySelector('#selected-campaign-label').textContent = campaign ? short(campaign.id, 18) : 'No Run';
+      document.querySelector('#prompt-readout').textContent = campaign ? campaign.prompt : 'No campaign selected yet.';
+      const chips = [];
+      if (campaign) {
+        chips.push(`Offer: ${campaign.offer || 'unknown'}`);
+        chips.push(`Markets: ${(campaign.countries || []).join(', ') || 'unknown'}`);
+        chips.push(`Targets: ${(campaign.industries || []).join(', ') || 'unknown'}`);
+      }
+      if (spec) {
+        chips.push(`Spec: ${spec.version || 'dynamic'}`);
+        chips.push(`Sources: ${(spec.source_priorities || []).slice(0, 3).join(' + ') || 'pending'}`);
+      }
+      document.querySelector('#prompt-chips').innerHTML = chips.map(chip => `<span class="chip">${esc(chip)}</span>`).join('');
+    }
+
+    function renderAgentTrace() {
+      const campaign = currentCampaign();
+      const spec = currentSpec();
+      const sourcePlan = currentSourcePlan();
+      const dossiers = currentCampaignDossiers();
+      const leads = currentCampaignLeads();
+      const evidencePacks = currentEvidencePacks();
+      const assessments = currentAssessments();
+      const markets = currentMarketContexts();
+      const questions = currentQuestions();
+      const signals = currentBuyerSignals();
+      const solutionCount = currentSolutions().length;
+      const statusCounts = assessments.reduce((acc, a) => { acc[a.status] = (acc[a.status] || 0) + 1; return acc; }, {});
+      const sourceItems = sourcePlan ? [
+        `${(sourcePlan.sources || []).length} source groups selected`,
+        `${(sourcePlan.search_queries || []).length} generated search queries`,
+        short((sourcePlan.search_queries || [])[0] || 'No query generated yet', 92),
+      ] : ['Waiting for Campaign Strategy output.'];
+      const cards = [
+        agentCard(1, 'Campaign Strategy Agent', !!campaign, [
+          campaign ? `Offer: ${campaign.offer}` : 'Waiting for a prompt.',
+          campaign ? `Targets: ${(campaign.industries || []).join(', ') || 'unknown'}` : 'No target segment yet.',
+          spec ? `Pain hypotheses: ${(spec.pain_hypotheses || []).slice(0, 3).join('; ')}` : 'Dynamic spec not generated for this stored run.',
+        ]),
+        agentCard(2, 'Discovery Agent', !!sourcePlan || leads.length > 0, [
+          ...sourceItems,
+          `${leads.length} candidate leads currently attached to this campaign`,
+        ]),
+        agentCard(3, 'Evidence Agent', evidencePacks.length > 0, [
+          `${evidencePacks.length} evidence packs built`,
+          markerSummary(evidencePacks, 'contact_markers', 'contact markers'),
+          markerSummary(evidencePacks, 'pain_markers', 'pain markers'),
+        ]),
+        agentCard(4, 'Qualification Agent', assessments.length > 0 || signals.length > 0 || solutionCount > 0, [
+          `${assessments.length} lead assessments`,
+          `Statuses: ${Object.entries(statusCounts).map(([k, v]) => `${k} ${v}`).join(' / ') || 'pending'}`,
+          `${signals.length} buyer signals and ${solutionCount} solution checks`,
+        ]),
+        agentCard(5, 'Market Context Agent', markets.length > 0, [
+          `${markets.length} market contexts`,
+          markerSummary(markets, 'gap_hypotheses', 'gap hypotheses'),
+          short((markets[0] || {}).summary || 'Competitor context waits for enrichment.', 92),
+        ]),
+        agentCard(6, 'Dossier Agent', dossiers.length > 0, [
+          `${dossiers.length} lead dossiers ready`,
+          `${dossiers.filter(d => d.status === 'qualified').length} qualified for manual review/outreach`,
+          short((dossiers[0] || {}).manual_opening_message || 'No outreach angle yet.', 92),
+        ]),
+        agentCard(7, 'Clarification Layer', questions.length > 0, [
+          `${questions.length} open questions`,
+          short((questions[0] || {}).question || 'No clarification needed for the selected run.', 92),
+          'Activates when evidence or campaign scope is too thin.',
+        ]),
+      ];
+      document.querySelector('#agent-count').textContent = fmt(cards.length);
+      document.querySelector('#agent-trace').innerHTML = cards.join('');
+    }
+
+    function agentCard(index, title, ready, items) {
+      const status = ready ? 'ready' : 'waiting';
+      return `
+        <article class="agent-card ${status}">
+          <div class="agent-head">
+            <div>
+              <div class="micro">${ready ? 'Output available' : 'Waiting'}</div>
+              <h3>${esc(title)}</h3>
+            </div>
+            <div class="agent-index">${fmt(index)}</div>
+          </div>
+          <ul class="agent-list">${items.map(item => `<li>${esc(item)}</li>`).join('')}</ul>
+        </article>
+      `;
+    }
+
+    function markerSummary(rows, key, label) {
+      const values = [];
+      rows.forEach(row => (row[key] || []).forEach(value => {
+        if (value && !values.includes(value)) values.push(value);
+      }));
+      return `${values.length} ${label}: ${values.slice(0, 4).join(', ') || 'pending'}`;
+    }
+
     function renderFilters() {
       document.querySelector('#filters').innerHTML = filters.map(f =>
         `<div class="filter ${activeFilter === f ? 'active' : ''}" onclick="setFilter('${f}')">${f}</div>`
@@ -463,6 +718,72 @@ HTML = """<!doctype html>
     function currentCampaignDossiers() {
       if (!selectedCampaignId) return state.dossiers;
       return state.dossiers.filter(d => d.campaign_id === selectedCampaignId);
+    }
+
+    function currentCampaign() {
+      if (previewPlan && previewPlan.campaign && previewPlan.campaign.id === selectedCampaignId) {
+        return previewPlan.campaign;
+      }
+      return state.campaigns.find(c => c.id === selectedCampaignId) || null;
+    }
+
+    function currentSpec() {
+      if (previewPlan && previewPlan.campaign_spec && previewPlan.campaign?.id === selectedCampaignId) {
+        return previewPlan.campaign_spec;
+      }
+      return state.campaign_specs.find(s => s.campaign_id === selectedCampaignId) || null;
+    }
+
+    function currentSourcePlan() {
+      const spec = currentSpec();
+      if (spec) {
+        return {
+          sources: spec.source_priorities || [],
+          search_queries: spec.search_queries || [],
+        };
+      }
+      return state.source_plans.find(p => p.campaign_id === selectedCampaignId) || null;
+    }
+
+    function currentCampaignLeads() {
+      if (!selectedCampaignId) return state.leads;
+      return state.leads.filter(l => l.campaign_id === selectedCampaignId);
+    }
+
+    function currentEvidencePacks() {
+      const leadIds = new Set(currentCampaignLeads().map(l => l.id));
+      return state.evidence_packs.filter(p => leadIds.has(p.lead_id));
+    }
+
+    function currentAssessments() {
+      const leadIds = new Set(currentCampaignLeads().map(l => l.id));
+      return state.lead_assessments.filter(a => leadIds.has(a.lead_id));
+    }
+
+    function currentMarketContexts() {
+      const leadIds = new Set(currentCampaignLeads().map(l => l.id));
+      return state.market_contexts.filter(m => leadIds.has(m.lead_id));
+    }
+
+    function currentBuyerSignals() {
+      const leadIds = new Set(currentCampaignLeads().map(l => l.id));
+      return state.buyer_signals.filter(s => leadIds.has(s.lead_id));
+    }
+
+    function currentSolutions() {
+      const leadIds = new Set(currentCampaignLeads().map(l => l.id));
+      return state.solution_assessments.filter(s => leadIds.has(s.lead_id));
+    }
+
+    function currentQuestions() {
+      return state.clarifications.filter(q => !selectedCampaignId || q.campaign_id === selectedCampaignId);
+    }
+
+    function syncPromptInputFromSelection() {
+      const input = document.querySelector('textarea[name="prompt"]');
+      const campaign = currentCampaign();
+      if (!input || !campaign || previewPlan || document.activeElement === input) return;
+      input.value = campaign.prompt || input.value;
     }
 
     function renderLeads() {
@@ -561,8 +882,10 @@ HTML = """<!doctype html>
 
     function selectCampaign(id) {
       selectedCampaignId = id;
+      if (!previewPlan || previewPlan.campaign?.id !== id) previewPlan = null;
       activeFilter = 'all';
       selectedId = null;
+      syncPromptInputFromSelection();
       render();
     }
 
@@ -588,8 +911,12 @@ HTML = """<!doctype html>
         body: JSON.stringify({ prompt })
       });
       const result = await response.json();
+      previewPlan = result;
+      selectedCampaignId = result.campaign.id;
+      selectedId = null;
       document.querySelector('#run-status').textContent =
         `Spec: ${(result.campaign.countries || []).join(', ')} / ${(result.campaign.industries || []).join(', ')} / ${(result.campaign_spec.source_priorities || result.active_search_providers).join(' + ')}`;
+      render();
     }
 
     async function runCampaign(event) {
@@ -602,6 +929,7 @@ HTML = """<!doctype html>
         body: JSON.stringify({ prompt })
       });
       const result = await response.json();
+      previewPlan = null;
       selectedCampaignId = result.campaign.id;
       selectedId = null;
       document.querySelector('#run-status').textContent =
