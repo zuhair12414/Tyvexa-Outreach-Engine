@@ -146,7 +146,7 @@ HTML = """<!doctype html>
     button:hover { border-color: rgba(255,255,255,.58); }
     .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
-    .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .stat {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -293,7 +293,6 @@ HTML = """<!doctype html>
     }
     .agent-card {
       position: relative;
-      min-height: 190px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: rgba(255,255,255,.024);
@@ -309,6 +308,12 @@ HTML = """<!doctype html>
     }
     .agent-card.ready::before { background: var(--good); }
     .agent-card.waiting::before { background: var(--warn); }
+    .agent-card.pending {
+      grid-column: 1 / -1;
+      min-height: 0;
+      background: rgba(255,255,255,.016);
+    }
+    .agent-card.pending::before { background: var(--dim); }
     .agent-head {
       display: flex;
       justify-content: space-between;
@@ -338,8 +343,14 @@ HTML = """<!doctype html>
     .agent-list li {
       border-top: 1px solid rgba(255,255,255,.08);
       padding-top: 8px;
-      font: 12px/1.45 var(--mono);
+      font: 11px/1.42 var(--mono);
       color: #cfd4cf;
+    }
+    .pending-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
     }
     .lead-section {
       padding: 24px 42px 34px;
@@ -444,14 +455,6 @@ HTML = """<!doctype html>
 
         <section class="panel tight">
           <div class="panel-title">
-            <h2>Provider Health</h2>
-            <span class="micro" id="provider-count">00</span>
-          </div>
-          <div id="providers"></div>
-        </section>
-
-        <section class="panel tight">
-          <div class="panel-title">
             <h2>Open Questions</h2>
             <span class="micro" id="question-count">00</span>
           </div>
@@ -544,7 +547,6 @@ HTML = """<!doctype html>
     }
 
     function render() {
-      renderProviders();
       renderCampaigns();
       renderQuestions();
       renderPromptSummary();
@@ -553,23 +555,6 @@ HTML = """<!doctype html>
       renderFilters();
       renderLeads();
       renderDrawer();
-    }
-
-    function renderProviders() {
-      const providers = state.settings.active_search_providers || [];
-      const crawl = state.settings.active_crawl_provider;
-      const recentErrors = state.provider_errors
-        .filter(e => !selectedCampaignId || e.campaign_id === selectedCampaignId)
-        .slice(-4)
-        .reverse();
-      document.querySelector('#provider-count').textContent = fmt(providers.length + (crawl ? 1 : 0));
-      document.querySelector('#providers').innerHTML = `
-        ${providers.map(p => `<div class="list-card"><span class="status-pill status-qualified">${esc(p)}</span><div class="micro" style="margin-top:8px;">Search provider</div></div>`).join('')}
-        ${crawl ? `<div class="list-card"><span class="status-pill status-qualified">${esc(crawl)}</span><div class="micro" style="margin-top:8px;">Crawl provider</div></div>` : ''}
-        <div class="list-card"><div class="micro">Caps</div><div class="copy">${esc(state.settings.max_candidates_per_run)} candidates / ${esc(state.settings.max_deep_analysis_per_run)} deep analyses</div></div>
-        ${recentErrors.map(e => `<div class="list-card error"><div class="micro">${esc(e.provider)} / ${esc(e.status_code || 'ERR')}</div><div class="copy">${esc(short(e.message, 180))}</div></div>`).join('')}
-        ${recentErrors.length ? '' : '<div class="list-card"><div class="micro">Selected run</div><div class="copy">No provider errors captured.</div></div>'}
-      `;
     }
 
     function renderCampaigns() {
@@ -593,12 +578,10 @@ HTML = """<!doctype html>
       const qualified = counts.qualified || 0;
       const review = (counts.manual_review || 0) + (counts.needs_input || 0);
       const rejected = counts.rejected || 0;
-      const errors = state.provider_errors.filter(e => !selectedCampaignId || e.campaign_id === selectedCampaignId).length;
       document.querySelector('#stats').innerHTML = [
         ['Qualified', qualified],
         ['Review', review],
         ['Rejected', rejected],
-        ['Provider Errors', errors],
       ].map(([label, value]) => `<div class="stat"><b>${fmt(value)}</b><span class="micro">${label}</span></div>`).join('');
     }
 
@@ -638,44 +621,84 @@ HTML = """<!doctype html>
         `${(sourcePlan.search_queries || []).length} generated search queries`,
         short((sourcePlan.search_queries || [])[0] || 'No query generated yet', 92),
       ] : ['Waiting for Campaign Strategy output.'];
-      const cards = [
-        agentCard(1, 'Campaign Strategy Agent', !!campaign, [
+      const agentDefinitions = [
+        {
+          index: 1,
+          title: 'Campaign Strategy Agent',
+          ready: !!campaign,
+          items: [
           campaign ? `Offer: ${campaign.offer}` : 'Waiting for a prompt.',
           campaign ? `Targets: ${(campaign.industries || []).join(', ') || 'unknown'}` : 'No target segment yet.',
           spec ? `Pain hypotheses: ${(spec.pain_hypotheses || []).slice(0, 3).join('; ')}` : 'Dynamic spec not generated for this stored run.',
-        ]),
-        agentCard(2, 'Discovery Agent', !!sourcePlan || leads.length > 0, [
+          ],
+        },
+        {
+          index: 2,
+          title: 'Discovery Agent',
+          ready: !!sourcePlan || leads.length > 0,
+          items: [
           ...sourceItems,
           `${leads.length} candidate leads currently attached to this campaign`,
-        ]),
-        agentCard(3, 'Evidence Agent', evidencePacks.length > 0, [
+          ],
+        },
+        {
+          index: 3,
+          title: 'Evidence Agent',
+          ready: evidencePacks.length > 0,
+          items: [
           `${evidencePacks.length} evidence packs built`,
           markerSummary(evidencePacks, 'contact_markers', 'contact markers'),
           markerSummary(evidencePacks, 'pain_markers', 'pain markers'),
-        ]),
-        agentCard(4, 'Qualification Agent', assessments.length > 0 || signals.length > 0 || solutionCount > 0, [
+          ],
+        },
+        {
+          index: 4,
+          title: 'Qualification Agent',
+          ready: assessments.length > 0 || signals.length > 0 || solutionCount > 0,
+          items: [
           `${assessments.length} lead assessments`,
           `Statuses: ${Object.entries(statusCounts).map(([k, v]) => `${k} ${v}`).join(' / ') || 'pending'}`,
           `${signals.length} buyer signals and ${solutionCount} solution checks`,
-        ]),
-        agentCard(5, 'Market Context Agent', markets.length > 0, [
+          ],
+        },
+        {
+          index: 5,
+          title: 'Market Context Agent',
+          ready: markets.length > 0,
+          items: [
           `${markets.length} market contexts`,
           markerSummary(markets, 'gap_hypotheses', 'gap hypotheses'),
           short((markets[0] || {}).summary || 'Competitor context waits for enrichment.', 92),
-        ]),
-        agentCard(6, 'Dossier Agent', dossiers.length > 0, [
+          ],
+        },
+        {
+          index: 6,
+          title: 'Dossier Agent',
+          ready: dossiers.length > 0,
+          items: [
           `${dossiers.length} lead dossiers ready`,
           `${dossiers.filter(d => d.status === 'qualified').length} qualified for manual review/outreach`,
           short((dossiers[0] || {}).manual_opening_message || 'No outreach angle yet.', 92),
-        ]),
-        agentCard(7, 'Clarification Layer', questions.length > 0, [
+          ],
+        },
+        {
+          index: 7,
+          title: 'Clarification Layer',
+          ready: questions.length > 0,
+          items: [
           `${questions.length} open questions`,
           short((questions[0] || {}).question || 'No clarification needed for the selected run.', 92),
           'Activates when evidence or campaign scope is too thin.',
-        ]),
+          ],
+        },
       ];
-      document.querySelector('#agent-count').textContent = fmt(cards.length);
-      document.querySelector('#agent-trace').innerHTML = cards.join('');
+      const readyCards = agentDefinitions
+        .filter(agent => agent.ready)
+        .map(agent => agentCard(agent.index, agent.title, agent.ready, agent.items));
+      const pendingAgents = agentDefinitions.filter(agent => !agent.ready);
+      if (pendingAgents.length) readyCards.push(pendingCard(pendingAgents));
+      document.querySelector('#agent-count').textContent = fmt(agentDefinitions.length);
+      document.querySelector('#agent-trace').innerHTML = readyCards.join('');
     }
 
     function agentCard(index, title, ready, items) {
@@ -690,6 +713,23 @@ HTML = """<!doctype html>
             <div class="agent-index">${fmt(index)}</div>
           </div>
           <ul class="agent-list">${items.map(item => `<li>${esc(item)}</li>`).join('')}</ul>
+        </article>
+      `;
+    }
+
+    function pendingCard(agents) {
+      return `
+        <article class="agent-card pending">
+          <div class="agent-head">
+            <div>
+              <div class="micro">Pending Until Run</div>
+              <h3>Agents Waiting For Lead Evidence</h3>
+            </div>
+            <div class="agent-index">${fmt(agents.length)}</div>
+          </div>
+          <div class="pending-row">
+            ${agents.map(agent => `<span class="chip">${esc(agent.title)}</span>`).join('')}
+          </div>
         </article>
       `;
     }
