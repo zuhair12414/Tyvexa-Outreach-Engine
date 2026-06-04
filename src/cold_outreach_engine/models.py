@@ -57,6 +57,17 @@ class SourcePlan:
 
 
 @dataclass
+class ProviderError:
+    campaign_id: str
+    provider: str
+    message: str
+    status_code: int | None = None
+    url: str | None = None
+    created_at: str = field(default_factory=utc_now)
+    id: str = field(default_factory=lambda: f"perr_{uuid4().hex[:10]}")
+
+
+@dataclass
 class BuyerSignal:
     lead_id: str
     name: str
@@ -119,6 +130,7 @@ class LeadScore:
     solution_status: SolutionStatus = SolutionStatus.UNKNOWN
     component_scores: dict[str, int] = field(default_factory=dict)
     rubric_version: str = "v1"
+    id: str = field(default_factory=lambda: f"score_{uuid4().hex[:10]}")
 
 
 @dataclass

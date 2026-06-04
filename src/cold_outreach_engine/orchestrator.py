@@ -83,7 +83,7 @@ class LeadGenerationOrchestrator:
             for signal in buyer_signals:
                 self.store.upsert("buyer_signals", to_jsonable(signal))
             self.store.upsert("solution_assessments", to_jsonable(solution))
-            self.store.upsert("scores", to_jsonable(score))
+            self.store.upsert("scores", to_jsonable(score), key="lead_id")
             self.store.upsert("dossiers", to_jsonable(dossier))
 
         return RunResult(campaign=campaign, leads=leads_to_process, dossiers=dossiers, questions=questions)

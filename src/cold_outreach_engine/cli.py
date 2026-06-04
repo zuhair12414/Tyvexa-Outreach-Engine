@@ -5,7 +5,7 @@ import json
 
 from cold_outreach_engine.agents.icp_planner import IcpPlannerAgent
 from cold_outreach_engine.config import load_settings
-from cold_outreach_engine.models import CampaignContext, to_jsonable
+from cold_outreach_engine.models import CampaignContext, ProviderError, to_jsonable
 from cold_outreach_engine.orchestrator import LeadGenerationOrchestrator
 from cold_outreach_engine.providers.factory import build_crawl_provider, build_search_provider
 from cold_outreach_engine.storage import JsonStore
@@ -65,8 +65,15 @@ def run_prompt(prompt: str, approved: bool) -> None:
     settings = load_settings()
     store = JsonStore(settings.data_dir)
     campaign = IcpPlannerAgent().plan(prompt)
+
+    provider_errors: list[ProviderError] = []
+
+    def record_provider_error(error: ProviderError) -> None:
+        provider_errors.append(error)
+        store.upsert("provider_errors", to_jsonable(error))
+
     orchestrator = LeadGenerationOrchestrator(
-        search_provider=build_search_provider(settings),
+        search_provider=build_search_provider(settings, error_sink=record_provider_error),
         crawl_provider=build_crawl_provider(settings),
         store=store,
         max_candidates_per_run=settings.max_candidates_per_run,
@@ -84,6 +91,7 @@ def run_prompt(prompt: str, approved: bool) -> None:
                 "dossiers": len(result.dossiers),
                 "open_questions": len(result.questions),
                 "statuses": statuses,
+                "provider_errors": [to_jsonable(error) for error in provider_errors],
                 "saved_to": str(settings.data_dir),
             },
             indent=2,

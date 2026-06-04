@@ -6,6 +6,19 @@ from cold_outreach_engine.models import CampaignContext
 from cold_outreach_engine.providers.base import CandidateCompany, PageSnapshot
 
 
+COUNTRY_CODES = {
+    "Finland": "FI",
+    "UAE": "AE",
+    "Saudi Arabia": "SA",
+    "Qatar": "QA",
+    "Germany": "DE",
+    "United Kingdom": "UK",
+    "France": "FR",
+    "Spain": "ES",
+    "Netherlands": "NL",
+}
+
+
 class FirecrawlSearchProvider:
     endpoint = "https://api.firecrawl.dev/v2/search"
 
@@ -23,7 +36,16 @@ class FirecrawlSearchProvider:
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={"query": query, "limit": self.max_results_per_query},
+                    json={
+                        "query": query,
+                        "limit": self.max_results_per_query,
+                        "sources": ["web"],
+                        "location": campaign.countries[0] if campaign.countries else None,
+                        "country": COUNTRY_CODES.get(campaign.countries[0])
+                        if campaign.countries
+                        else None,
+                        "ignoreInvalidURLs": True,
+                    },
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -53,14 +75,36 @@ class FirecrawlSearchProvider:
         return queries[:6]
 
     def _results_from(self, data: dict) -> list[dict]:
-        if isinstance(data.get("data"), list):
-            return data["data"]
+        payload = data.get("data")
+        if isinstance(payload, dict) and isinstance(payload.get("web"), list):
+            return payload["web"]
+        if isinstance(payload, list):
+            return payload
         if isinstance(data.get("results"), list):
             return data["results"]
         return []
 
     def _clean_title(self, title: str) -> str:
-        return title.split("|")[0].split("-")[0].strip()
+        parts = []
+        for chunk in title.replace("|", "•").replace(" - ", "•").split("•"):
+            cleaned = chunk.strip()
+            if cleaned:
+                parts.append(cleaned)
+        generic = {
+            "contact",
+            "contact us",
+            "restaurants",
+            "restaurant",
+            "reservations",
+            "reservation",
+            "booking",
+            "book a table",
+            "menu",
+        }
+        meaningful = [part for part in parts if part.lower() not in generic]
+        if meaningful:
+            return meaningful[-1]
+        return parts[0] if parts else title.strip()
 
 
 class FirecrawlProvider:

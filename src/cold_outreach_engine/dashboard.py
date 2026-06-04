@@ -123,6 +123,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "campaigns": self.store.read_collection("campaigns"),
                     "dossiers": self.store.read_collection("dossiers"),
                     "clarifications": self.store.read_collection("clarifications"),
+                    "provider_errors": self.store.read_collection("provider_errors"),
                 }
             )
             return
@@ -137,8 +138,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json({"error": "prompt is required"}, status=400)
                 return
             campaign = IcpPlannerAgent().plan(prompt)
+
+            def record_provider_error(error) -> None:
+                self.store.upsert("provider_errors", to_jsonable(error))
+
             result = LeadGenerationOrchestrator(
-                search_provider=build_search_provider(self.settings),
+                search_provider=build_search_provider(
+                    self.settings, error_sink=record_provider_error
+                ),
                 crawl_provider=build_crawl_provider(self.settings),
                 store=self.store,
                 max_candidates_per_run=self.settings.max_candidates_per_run,

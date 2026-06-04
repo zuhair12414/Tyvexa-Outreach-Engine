@@ -38,6 +38,9 @@ class ScoringAgent:
         if not lead.website:
             status = LeadStatus.REJECTED
             reject_reason = "Rejected by rubric: no website/public verification path."
+        elif disqualifier := self._hard_disqualifier(lead):
+            status = LeadStatus.REJECTED
+            reject_reason = disqualifier
         elif component_scores["trust_penalty"] < 0:
             status = LeadStatus.REJECTED
             reject_reason = "Rejected by rubric: trust or legitimacy concern."
@@ -82,3 +85,40 @@ class ScoringAgent:
             return -3
         return 0
 
+    def _hard_disqualifier(self, lead: LeadMemory) -> str | None:
+        name = lead.company_name.strip().lower()
+        facts = " ".join(lead.facts).lower()
+        website = (lead.website or "").lower()
+
+        generic_names = {
+            "contact",
+            "contact us",
+            "restaurants",
+            "restaurant",
+            "reservations",
+            "booking",
+            "menu",
+        }
+        if name in generic_names:
+            return "Rejected by rubric: generic page title, not a clear company lead."
+
+        non_target_markers = [
+            "public authority",
+            "municipality",
+            "food poisoning",
+            "setting up a food business",
+            "museum is specialised",
+            "food and drink culture",
+            "helpdesk for restaurateurs",
+            "support team assists with all aspects",
+            "selection of the best restaurants",
+            "reserve a table in advance from a selection",
+        ]
+        if any(marker in facts for marker in non_target_markers):
+            return "Rejected by rubric: page appears to be non-target authority, platform, museum, or directory."
+
+        non_target_domains = ["ruokavirasto.", "tableonline.", "museo", "museum"]
+        if any(marker in website for marker in non_target_domains):
+            return "Rejected by rubric: website domain appears outside target buyer profile."
+
+        return None
