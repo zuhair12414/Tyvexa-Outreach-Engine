@@ -356,6 +356,42 @@ HTML = """<!doctype html>
       gap: 8px;
       margin-top: 8px;
     }
+    .data-flow {
+      max-width: 1180px;
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.018);
+      overflow: hidden;
+    }
+    .flow-row {
+      display: grid;
+      grid-template-columns: 34px 150px minmax(150px, 1fr) 96px 96px 90px;
+      gap: 12px;
+      align-items: center;
+      padding: 11px 13px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      font: 11px var(--mono);
+      color: #cfd4cf;
+    }
+    .flow-row:first-child { border-top: 0; }
+    .flow-row.header {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      background: rgba(255,255,255,.025);
+    }
+    .flow-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      display: inline-block;
+      margin-right: 7px;
+    }
+    .flow-dot.completed { background: var(--good); }
+    .flow-dot.failed { background: var(--bad); }
+    .flow-dot.running { background: var(--warn); }
     .lead-section {
       padding: 24px 42px 34px;
     }
@@ -502,6 +538,7 @@ HTML = """<!doctype html>
             <span class="micro" id="agent-count">00</span>
           </div>
           <div id="agent-trace" class="agent-grid"></div>
+          <div id="data-flow" class="data-flow"></div>
         </section>
 
         <section class="lead-section">
@@ -522,7 +559,7 @@ HTML = """<!doctype html>
   <script>
     const stages = ['new','linkedin_searched','contacted','follow_up_due','replied','not_fit','won','lost'];
     const filters = ['all','qualified','manual_review','needs_input','rejected'];
-    let state = { campaigns: [], campaign_specs: [], dossiers: [], clarifications: [], provider_errors: [], leads: [], scores: [], buyer_signals: [], solution_assessments: [], source_plans: [], evidence_packs: [], lead_assessments: [], market_contexts: [], settings: {} };
+    let state = { campaigns: [], campaign_specs: [], campaign_runs: [], agent_steps: [], agent_artifacts: [], dossiers: [], clarifications: [], provider_errors: [], leads: [], scores: [], buyer_signals: [], solution_assessments: [], source_plans: [], evidence_packs: [], lead_assessments: [], market_contexts: [], settings: {} };
     let activeFilter = 'all';
     let selectedCampaignId = null;
     let selectedId = null;
@@ -555,6 +592,7 @@ HTML = """<!doctype html>
       renderQuestions();
       renderPromptSummary();
       renderAgentTrace();
+      renderDataFlow();
       renderStats();
       renderFilters();
       renderLeads();
@@ -592,6 +630,7 @@ HTML = """<!doctype html>
     function renderPromptSummary() {
       const campaign = currentCampaign();
       const spec = currentSpec();
+      const run = currentRun();
       document.querySelector('#selected-campaign-label').textContent = campaign ? short(campaign.id, 18) : 'No Run';
       document.querySelector('#prompt-readout').textContent = campaign ? campaign.prompt : 'No campaign selected yet.';
       const chips = [];
@@ -607,6 +646,9 @@ HTML = """<!doctype html>
         chips.push(`Strategy: ${strategy}`);
         chips.push(`Spec: ${spec.version || 'dynamic'}`);
         chips.push(`Sources: ${(spec.source_priorities || []).slice(0, 3).join(' + ') || 'pending'}`);
+      }
+      if (run) {
+        chips.push(`Run: ${run.status || 'unknown'} / ${run.current_stage || 'unknown'}`);
       }
       document.querySelector('#prompt-chips').innerHTML = chips.map(chip => `<span class="chip">${esc(chip)}</span>`).join('');
     }
@@ -710,6 +752,33 @@ HTML = """<!doctype html>
       document.querySelector('#agent-trace').innerHTML = readyCards.join('');
     }
 
+    function renderDataFlow() {
+      const run = currentRun();
+      const steps = currentAgentSteps().slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+      const artifacts = currentAgentArtifacts();
+      const rows = steps.map(step => `
+        <div class="flow-row">
+          <span>${fmt(step.sequence || 0)}</span>
+          <span>${esc(step.agent_name)}</span>
+          <span>${esc(step.stage)}${step.lead_id ? ` / ${esc(short(step.lead_id, 16))}` : ''}</span>
+          <span><i class="flow-dot ${esc(step.status)}"></i>${esc(step.status)}</span>
+          <span>${fmt((step.input_artifact_ids || []).length)} in</span>
+          <span>${fmt((step.output_artifact_ids || []).length)} out</span>
+        </div>
+      `);
+      document.querySelector('#data-flow').innerHTML = `
+        <div class="flow-row header">
+          <span>#</span>
+          <span>Agent</span>
+          <span>Stage / Lead</span>
+          <span>Status</span>
+          <span>Inputs</span>
+          <span>Outputs</span>
+        </div>
+        ${rows.join('') || `<div class="flow-row"><span>--</span><span>Ledger</span><span>${esc(run ? 'No step records for this run yet.' : 'No campaign run ledger yet.')}</span><span>${esc(run ? run.status : 'pending')}</span><span>${fmt(artifacts.length)} artifacts</span><span>--</span></div>`}
+      `;
+    }
+
     function agentCard(index, title, ready, items) {
       const status = ready ? 'ready' : 'waiting';
       return `
@@ -781,6 +850,28 @@ HTML = """<!doctype html>
         return previewPlan.campaign_spec;
       }
       return state.campaign_specs.find(s => s.campaign_id === selectedCampaignId) || null;
+    }
+
+    function currentRun() {
+      if (!selectedCampaignId) return null;
+      return state.campaign_runs
+        .filter(r => r.campaign_id === selectedCampaignId)
+        .slice()
+        .sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || '')))[0] || null;
+    }
+
+    function currentAgentSteps() {
+      const run = currentRun();
+      if (run) return state.agent_steps.filter(step => step.run_id === run.id);
+      if (!selectedCampaignId) return state.agent_steps;
+      return state.agent_steps.filter(step => step.campaign_id === selectedCampaignId);
+    }
+
+    function currentAgentArtifacts() {
+      const run = currentRun();
+      if (run) return state.agent_artifacts.filter(artifact => artifact.run_id === run.id);
+      if (!selectedCampaignId) return state.agent_artifacts;
+      return state.agent_artifacts.filter(artifact => artifact.campaign_id === selectedCampaignId);
     }
 
     function currentSourcePlan() {
@@ -870,6 +961,8 @@ HTML = """<!doctype html>
       const evidencePack = state.evidence_packs.find(p => p.lead_id === d.lead_id);
       const assessment = state.lead_assessments.find(a => a.lead_id === d.lead_id);
       const market = state.market_contexts.find(m => m.lead_id === d.lead_id);
+      const leadSteps = currentLeadSteps(d.lead_id);
+      const leadArtifacts = currentLeadArtifacts(d.lead_id);
       document.querySelector('#drawer').innerHTML = `
         <div class="detail-head">
           <span class="status-pill status-${esc(d.status)}">${esc(d.status)}</span>
@@ -906,6 +999,11 @@ HTML = """<!doctype html>
           ${solution ? `<details><summary>Solution Raw</summary><pre>${esc(JSON.stringify(solution, null, 2))}</pre></details>` : ''}
         </div>
         <div class="detail-block">
+          <div class="micro">Agent Data Flow</div>
+          ${leadSteps.map(step => `<div class="claim"><div class="copy">${esc(step.agent_name)} / ${esc(step.stage)}</div><div class="micro">${esc(step.status)} / ${fmt((step.input_artifact_ids || []).length)} inputs / ${fmt((step.output_artifact_ids || []).length)} outputs</div></div>`).join('') || '<div class="micro">No lead-specific step records yet.</div>'}
+          <details><summary>Lead Artifacts</summary><pre>${esc(JSON.stringify(leadArtifacts, null, 2))}</pre></details>
+        </div>
+        <div class="detail-block">
           <div class="micro">Bulky Data</div>
           ${assessment ? `<details><summary>Lead Assessment</summary><pre>${esc(JSON.stringify(assessment, null, 2))}</pre></details>` : ''}
           ${evidencePack ? `<details><summary>Evidence Pack</summary><pre>${esc(JSON.stringify(evidencePack, null, 2))}</pre></details>` : ''}
@@ -919,6 +1017,8 @@ HTML = """<!doctype html>
 
     function leadFor(id) { return state.leads.find(l => l.id === id); }
     function scoreFor(id) { return state.scores.find(s => s.lead_id === id); }
+    function currentLeadSteps(id) { return currentAgentSteps().filter(step => step.lead_id === id); }
+    function currentLeadArtifacts(id) { return currentAgentArtifacts().filter(artifact => artifact.lead_id === id); }
 
     function setFilter(filter) {
       activeFilter = filter;
@@ -1005,6 +1105,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 {
                     "campaigns": self.store.read_collection("campaigns"),
                     "campaign_specs": self.store.read_collection("campaign_specs"),
+                    "campaign_runs": self.store.read_collection("campaign_runs"),
+                    "agent_steps": self.store.read_collection("agent_steps"),
+                    "agent_artifacts": self.store.read_collection("agent_artifacts"),
                     "leads": self.store.read_collection("leads"),
                     "scores": self.store.read_collection("scores"),
                     "dossiers": self.store.read_collection("dossiers"),
@@ -1091,8 +1194,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             ).run_campaign(campaign, spec)
             self._json(
                 {
+                    "run": to_jsonable(result.run),
                     "campaign": to_jsonable(result.campaign),
                     "campaign_spec": to_jsonable(result.spec),
+                    "agent_steps": to_jsonable(result.agent_steps),
+                    "agent_artifacts": to_jsonable(result.agent_artifacts),
                     "dossiers": to_jsonable(result.dossiers),
                     "questions": to_jsonable(result.questions),
                 }

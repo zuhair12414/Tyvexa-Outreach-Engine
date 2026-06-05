@@ -35,3 +35,47 @@ class JsonStore:
         rows.append(row)
         self.write_collection(name, rows)
 
+    def append_artifact(self, row: dict[str, Any]) -> None:
+        self.append("agent_artifacts", row)
+
+    def append_agent_step(self, row: dict[str, Any]) -> None:
+        self.append("agent_steps", row)
+
+    def read_artifacts(
+        self,
+        run_id: str | None = None,
+        campaign_id: str | None = None,
+        lead_id: str | None = None,
+        agent_name: str | None = None,
+        artifact_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.read_collection("agent_artifacts")
+        return [
+            row
+            for row in rows
+            if self._matches(row, "run_id", run_id)
+            and self._matches(row, "campaign_id", campaign_id)
+            and self._matches(row, "lead_id", lead_id)
+            and self._matches(row, "producer_agent", agent_name)
+            and self._matches(row, "artifact_type", artifact_type)
+        ]
+
+    def read_agent_steps(
+        self,
+        run_id: str | None = None,
+        campaign_id: str | None = None,
+        lead_id: str | None = None,
+        agent_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.read_collection("agent_steps")
+        return [
+            row
+            for row in rows
+            if self._matches(row, "run_id", run_id)
+            and self._matches(row, "campaign_id", campaign_id)
+            and self._matches(row, "lead_id", lead_id)
+            and self._matches(row, "agent_name", agent_name)
+        ]
+
+    def _matches(self, row: dict[str, Any], key: str, expected: str | None) -> bool:
+        return expected is None or row.get(key) == expected

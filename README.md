@@ -6,6 +6,7 @@ Dynamic lead generation utility for an agentic AI startup. Each run starts from 
 
 - Accepts a dynamic campaign prompt and uses an AI API to convert it into a per-run `CampaignSpec`; it does not depend on permanent restaurant/BPO/etc. profiles.
 - Runs a controlled multi-agent pipeline: strategy, discovery, evidence, qualification, market context, dossier creation, and clarification.
+- Records every run in a ledger with `CampaignRun`, `AgentStep`, and `AgentArtifact` rows so agent inputs/outputs are inspectable.
 - Keeps campaign memory separate from per-lead memory so multi-lead runs do not bleed assumptions across companies.
 - Produces lead dossiers with evidence packs, lead assessments, confidence, classification, manual LinkedIn guidance, and follow-up state.
 - Starts with provider interfaces, AI strategy planning, and null/sample providers; real search/crawl keys can be added incrementally.
@@ -85,3 +86,13 @@ Cost guards:
 - Clarification Layer: asks for user input when the spec or lead evidence is underspecified.
 
 Compatibility wrappers remain for older imports, but the orchestrator now runs the 6-stage architecture above.
+
+## Ledger-First Runtime
+
+Each approved run writes three trace collections alongside the existing lead/dossier collections:
+
+- `campaign_runs`: run status, current stage, provider manifest, caps, strategy source/model, and error state.
+- `agent_steps`: ordered agent execution records with input artifact IDs, output artifact IDs, lead scope, status, and errors.
+- `agent_artifacts`: append-only typed artifacts produced by agents, including campaign specs, source plans, leads, evidence packs, assessments, market context, dossiers, and clarification questions.
+
+This keeps the engine framework-independent while preserving the state/checkpoint shape needed for a later LangGraph or Agents SDK migration.

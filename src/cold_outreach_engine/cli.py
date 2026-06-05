@@ -99,11 +99,16 @@ def run_prompt(prompt: str, approved: bool) -> None:
     print(
         json.dumps(
             {
+                "run_id": result.run.id,
                 "campaign_id": result.campaign.id,
                 "spec_id": result.spec.id,
+                "run_status": result.run.status.value,
+                "current_stage": result.run.current_stage,
                 "processed_leads": len(result.leads),
                 "dossiers": len(result.dossiers),
                 "open_questions": len(result.questions),
+                "agent_steps": len(result.agent_steps),
+                "agent_artifacts": len(result.agent_artifacts),
                 "statuses": statuses,
                 "provider_errors": [to_jsonable(error) for error in provider_errors],
                 "saved_to": str(settings.data_dir),

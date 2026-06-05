@@ -18,6 +18,16 @@ Campaign Prompt
   -> Lead Dossier + Follow-up Tracker
 ```
 
+The runtime is ledger-first: every stage writes a durable run record, step record, and typed artifact record. Agents do not pass hidden chat history to each other; they consume and produce structured artifacts.
+
+## Runtime Ledger
+
+- `CampaignRun`: one prompt execution with status, current stage, provider manifest, caps, strategy source/model, timestamps, and errors.
+- `AgentStep`: one agent execution with stage, agent name, lead scope when applicable, input artifact IDs, output artifact IDs, status, and error.
+- `AgentArtifact`: append-only structured output from an agent. Major artifact types include `CampaignSpec`, `SourcePlan`, `LeadMemory`, `EvidencePack`, `LeadAssessment`, `SolutionAssessment`, `MarketContext`, `LeadDossier`, and `ClarificationQuestion`.
+
+Existing collections such as `leads`, `dossiers`, and `scores` remain for fast dashboard access, but the ledger is the source of truth for data flow and debugging.
+
 ## Context Boundaries
 
 Campaign memory is shared across one lead generation attempt:

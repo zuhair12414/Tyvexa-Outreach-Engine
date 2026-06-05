@@ -37,6 +37,68 @@ class FollowUpStage(str, Enum):
     LOST = "lost"
 
 
+class CampaignRunStatus(str, Enum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    WAITING_FOR_INPUT = "waiting_for_input"
+
+
+class AgentStepStatus(str, Enum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+@dataclass
+class CampaignRun:
+    campaign_id: str
+    prompt: str
+    status: CampaignRunStatus
+    current_stage: str
+    caps: dict[str, int]
+    providers: dict[str, Any]
+    strategy_source: str = "unknown"
+    strategy_model: str | None = None
+    error: str | None = None
+    id: str = field(default_factory=lambda: f"run_{uuid4().hex[:10]}")
+    started_at: str = field(default_factory=utc_now)
+    completed_at: str | None = None
+    updated_at: str = field(default_factory=utc_now)
+
+
+@dataclass
+class AgentArtifact:
+    run_id: str
+    campaign_id: str
+    artifact_type: str
+    producer_agent: str
+    data: dict[str, Any]
+    source_id: str | None = None
+    lead_id: str | None = None
+    input_artifact_ids: list[str] = field(default_factory=list)
+    id: str = field(default_factory=lambda: f"art_{uuid4().hex[:10]}")
+    created_at: str = field(default_factory=utc_now)
+
+
+@dataclass
+class AgentStep:
+    run_id: str
+    campaign_id: str
+    agent_name: str
+    stage: str
+    status: AgentStepStatus
+    input_artifact_ids: list[str] = field(default_factory=list)
+    output_artifact_ids: list[str] = field(default_factory=list)
+    lead_id: str | None = None
+    sequence: int = 0
+    error: str | None = None
+    id: str = field(default_factory=lambda: f"step_{uuid4().hex[:10]}")
+    started_at: str = field(default_factory=utc_now)
+    completed_at: str | None = None
+
+
 @dataclass
 class Evidence:
     claim: str
