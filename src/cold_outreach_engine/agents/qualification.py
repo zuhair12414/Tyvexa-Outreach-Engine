@@ -74,8 +74,13 @@ class LeadQualificationAgent:
             "solution_gap": self._solution_gap_score(solution.status),
             "trust": self._trust_score(campaign, lead),
         }
-        total = sum(component_scores.values())
-        status, reject_reason = self._status_for(lead, evidence_pack, total, component_scores)
+        raw_total = sum(component_scores.values())
+        total = self._apply_solution_caps(raw_total, solution.status)
+        if total != raw_total:
+            component_scores["strong_solution_cap"] = total - raw_total
+        status, reject_reason = self._status_for(
+            lead, evidence_pack, total, component_scores, solution.status
+        )
 
         assessment = LeadAssessment(
             campaign_id=campaign.id,
@@ -159,7 +164,7 @@ class LeadQualificationAgent:
 
         evidence = Evidence(
             claim=f"Detected public solution markers: {', '.join(detected) or 'none visible'}",
-            source_url=lead.website or "system://no-website",
+            source_url=lead.website or self._first_public_source(lead),
             agent=self.name,
             confidence=0.6 if detected else 0.35,
         )
@@ -199,6 +204,11 @@ class LeadQualificationAgent:
             return 6
         return 1
 
+    def _apply_solution_caps(self, total: int, status: SolutionStatus) -> int:
+        if status == SolutionStatus.STRONG_SOLUTION:
+            return min(total, 65)
+        return total
+
     def _trust_score(self, campaign: CampaignContext, lead: LeadMemory) -> int:
         text = " ".join(lead.facts).lower()
         if any(term in text for term in self.SUSPICIOUS_TERMS):
@@ -213,6 +223,7 @@ class LeadQualificationAgent:
         evidence_pack: EvidencePack,
         total: int,
         component_scores: dict[str, int],
+        solution_status: SolutionStatus,
     ) -> tuple[LeadStatus, str | None]:
         if not lead.website:
             return LeadStatus.REJECTED, "Rejected by rubric: no website/public verification path."
@@ -224,6 +235,8 @@ class LeadQualificationAgent:
         if component_scores["trust"] < 0:
             return LeadStatus.REJECTED, "Rejected by rubric: trust or legitimacy concern."
 
+        if solution_status == SolutionStatus.STRONG_SOLUTION and total >= 50:
+            return LeadStatus.MANUAL_REVIEW, None
         if total >= 70:
             return LeadStatus.QUALIFIED, None
         if total >= 50:

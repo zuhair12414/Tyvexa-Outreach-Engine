@@ -272,6 +272,7 @@ class CampaignStrategyAgent:
         patterns = [
             r"\bfor\s+(.+?)\s+(?:businesses|companies|firms|agencies|operators|providers)\b",
             r"\b(?:target|targeting)\s+(.+?)(?:\s+in\b|\s+looking\b|\s+with\b|$)",
+            r"\bfor\s+(.+?)(?:\s+that\b|\s+needing\b|\s+need\b|\s+looking\b|\s+with\b|$)",
         ]
         for pattern in patterns:
             match = re.search(pattern, prompt, flags=re.IGNORECASE)
@@ -308,6 +309,7 @@ class CampaignStrategyAgent:
             r"\blooking for\s+(.+)$",
             r"\boffer\s*:\s*(.+)$",
             r"\bneed(?:s|ing)?\s+(.+)$",
+            r"\bwith\s+(.+)$",
         ]:
             match = re.search(pattern, prompt, flags=re.IGNORECASE)
             if match:
@@ -344,10 +346,21 @@ class CampaignStrategyAgent:
         return signals[:10]
 
     def _source_priorities(self, campaign: CampaignContext) -> list[str]:
-        prompt = campaign.prompt.lower()
+        prompt = f"{campaign.prompt} {' '.join(campaign.industries)}".lower()
+        local_vertical_terms = [
+            "restaurant",
+            "dental",
+            "clinic",
+            "hotel",
+            "car rental",
+            "home services",
+            "plumbing",
+            "real estate agenc",
+        ]
         local_likely = bool(
             re.search(r"\b(local|nearby|city|location|branch|branches|storefront)\b", prompt)
             or re.search(r"\bfor\b.+\b(businesses|storefronts|shops|branches)\b", prompt)
+            or any(term in prompt for term in local_vertical_terms)
         )
         sources = ["firecrawl_search", "brave_search", "company_websites", "company_directories"]
         if local_likely:

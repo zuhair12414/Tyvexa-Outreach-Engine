@@ -67,6 +67,43 @@ def test_campaign_strategy_fallback_extracts_dynamic_prompt_context() -> None:
     assert any("No LLM provider configured" in note for note in spec.confidence_notes)
 
 
+def test_campaign_strategy_extracts_vertical_specific_prompts_without_clarification() -> None:
+    cases = [
+        (
+            "Find me leads in UAE for dental clinics that miss appointment calls and need voice AI reception",
+            ["dental clinics"],
+            "voice AI reception",
+            "google_places",
+        ),
+        (
+            "Find me leads in Netherlands for boutique hotels needing multilingual guest phone support and reservation handling",
+            ["boutique hotels"],
+            "multilingual guest phone support and reservation handling",
+            "google_places",
+        ),
+        (
+            "Find me leads in France for ecommerce stores looking for customer support automation",
+            ["ecommerce stores"],
+            "customer support automation",
+            "firecrawl_search",
+        ),
+        (
+            "Find me leads in Spain for home services and plumbing companies with weak missed-call recovery",
+            ["home services", "plumbing"],
+            "weak missed-call recovery",
+            "google_places",
+        ),
+    ]
+
+    for prompt, expected_industries, expected_offer, expected_source in cases:
+        campaign, spec = CampaignStrategyAgent().plan(prompt)
+
+        assert campaign.industries == expected_industries
+        assert campaign.offer == expected_offer
+        assert expected_source in spec.source_priorities
+        assert "unspecified target businesses" not in campaign.industries
+
+
 def test_campaign_strategy_ai_output_is_schema_normalized() -> None:
     class FakeLlmProvider:
         def classify(self, task: str, payload: dict) -> dict:
@@ -215,6 +252,66 @@ def test_evidence_and_qualification_are_conservative_for_low_signal_leads(tmp_pa
     assert rejected_assessment.reject_reason == (
         "Rejected by rubric: no website/public verification path."
     )
+
+
+def test_strong_existing_solution_is_capped_to_manual_review(tmp_path: Path) -> None:
+    from cold_outreach_engine.providers.base import CandidateCompany, PageSnapshot
+
+    class StrongSolutionSearchProvider:
+        def search_companies(self, campaign, spec=None):
+            return [
+                CandidateCompany(
+                    name="Mature Support Stack Restaurant",
+                    country="Finland",
+                    city="Helsinki",
+                    industry="restaurant",
+                    website="https://mature.example",
+                    source_url="synthetic://strong-solution",
+                    snippets=[
+                        "Restaurant with missed inbound calls, phone booking, and mature tooling."
+                    ],
+                )
+            ]
+
+    class StrongSolutionCrawlProvider:
+        def crawl_company(self, company):
+            return [
+                PageSnapshot(
+                    url="https://mature.example",
+                    title="Mature Support Stack Restaurant",
+                    text=(
+                        "Restaurant with phone, call handling, missed inbound calls, "
+                        "booking, Intercom, HubSpot, Zendesk, Salesforce, and Freshdesk."
+                    ),
+                )
+            ]
+
+    store = JsonStore(tmp_path)
+    campaign = CampaignContext(
+        prompt="Find me leads in Finland for restaurant businesses looking for voice AI capabilities",
+        offer="voice AI capabilities",
+        countries=["Finland"],
+        industries=["restaurant"],
+        ideal_company="public documentation available and growing business",
+        pain_signals=["missed inbound calls", "phone dependency", "manual call handling"],
+        reject_rules=["no public verification path", "no usable contact path"],
+    )
+    spec = CampaignStrategyAgent().build_spec(campaign)
+    result = LeadGenerationOrchestrator(
+        search_provider=StrongSolutionSearchProvider(),
+        crawl_provider=StrongSolutionCrawlProvider(),
+        store=store,
+        max_candidates_per_run=5,
+        max_deep_analysis_per_run=5,
+        strategy_agent=CampaignStrategyAgent(),
+    ).run_campaign(campaign, spec)
+
+    dossier = result.dossiers[0]
+    assessment = result.assessments[0]
+    assert dossier.status == LeadStatus.MANUAL_REVIEW
+    assert dossier.score == 65
+    assert assessment.solution.status.value == "strong_solution"
+    assert assessment.component_scores["strong_solution_cap"] < 0
 
 
 def test_underspecified_campaign_creates_clarification_and_waiting_run(tmp_path: Path) -> None:
