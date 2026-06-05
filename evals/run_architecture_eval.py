@@ -5,11 +5,11 @@ import csv
 import html
 import json
 import shutil
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from statistics import mean
 from tempfile import TemporaryDirectory
 
 from cold_outreach_engine.agents.campaign_strategy import CampaignStrategyAgent
@@ -315,7 +315,7 @@ def lead_fixture_by_name(cases: list[EvalCase]) -> dict[str, LeadFixture]:
     return {lead.name: lead for case in cases for lead in case.leads}
 
 
-def evaluate_case(case: EvalCase, data_root: Path) -> tuple[dict, list[dict]]:
+def evaluate_case(case: EvalCase, data_root: Path) -> tuple[dict, list[dict], list[dict]]:
     case_dir = data_root / case.case_id
     store = JsonStore(case_dir)
     search_provider = SyntheticSearchProvider([case])
@@ -335,7 +335,9 @@ def evaluate_case(case: EvalCase, data_root: Path) -> tuple[dict, list[dict]]:
             "crawl": "SyntheticCrawlProvider",
         },
     )
+    started = time.perf_counter()
     result = orchestrator.run_campaign(campaign, spec)
+    duration_ms = (time.perf_counter() - started) * 1000
     fixture_by_name = {lead.name: lead for lead in case.leads}
     statuses = Counter(dossier.status.value for dossier in result.dossiers)
     artifact_types = Counter(artifact.artifact_type for artifact in result.agent_artifacts)
@@ -382,9 +384,11 @@ def evaluate_case(case: EvalCase, data_root: Path) -> tuple[dict, list[dict]]:
     industry_pass = industry_match(spec.target_industries, case.expected_industries)
     offer_pass = contains_all_terms(spec.offer, case.expected_offer_terms)
     source_pass = case.expected_source in spec.source_priorities
-    prompt_accuracy = mean([country_pass, industry_pass, offer_pass, source_pass])
+    prompt_parts = [country_pass, industry_pass, offer_pass, source_pass]
+    prompt_accuracy = sum(1 for passed in prompt_parts if passed) / len(prompt_parts)
 
     lead_rows = []
+    claim_rows = []
     correct_leads = 0
     accepted_without_public_evidence = 0
     false_qualified = 0
@@ -413,12 +417,26 @@ def evaluate_case(case: EvalCase, data_root: Path) -> tuple[dict, list[dict]]:
             accepted_without_public_evidence += 1
         claim_support_results = []
         for claim in dossier.claims:
+            source_urls = [evidence_source_by_id.get(evidence_id, "") for evidence_id in claim.evidence_ids]
             supported = bool(claim.evidence_ids) and all(
                 evidence_id in evidence_source_by_id
                 and not evidence_source_by_id[evidence_id].startswith("system://")
                 for evidence_id in claim.evidence_ids
             )
             claim_support_results.append(supported)
+            claim_rows.append(
+                {
+                    "case_id": case.case_id,
+                    "company_name": dossier.company_name,
+                    "expected_status": expected,
+                    "actual_status": actual,
+                    "claim_text": claim.text,
+                    "evidence_ids": "; ".join(claim.evidence_ids),
+                    "source_urls": "; ".join(source_urls),
+                    "supported": supported,
+                    "confidence": claim.confidence,
+                }
+            )
         total_claims += len(claim_support_results)
         supported_claims += sum(1 for supported in claim_support_results if supported)
         lead_rows.append(
@@ -468,6 +486,7 @@ def evaluate_case(case: EvalCase, data_root: Path) -> tuple[dict, list[dict]]:
         "artifact_reference_pass": artifact_reference_pass,
         "lead_artifact_pass": lead_artifact_pass,
         "tool_path_pass": tool_path_pass,
+        "duration_ms": round(duration_ms, 2),
         "plan_provider_calls": plan_provider_calls,
         "search_calls": search_provider.search_calls,
         "crawl_calls": crawl_provider.crawl_calls,
@@ -485,18 +504,45 @@ def evaluate_case(case: EvalCase, data_root: Path) -> tuple[dict, list[dict]]:
         "accepted_without_public_evidence": accepted_without_public_evidence,
         "claim_support_rate": round(claim_support_rate, 4),
     }
-    return run_row, lead_rows
+    return run_row, lead_rows, claim_rows
 
 
 def bool_rate(rows: list[dict], field: str) -> float:
     return sum(1 for row in rows if row[field]) / max(1, len(rows))
 
 
-def aggregate_metrics(run_rows: list[dict], lead_rows: list[dict]) -> list[dict]:
+def class_recall(lead_rows: list[dict], expected_status: str) -> float | None:
+    expected_rows = [row for row in lead_rows if row["expected_status"] == expected_status]
+    if not expected_rows:
+        return None
+    return sum(1 for row in expected_rows if row["actual_status"] == expected_status) / len(expected_rows)
+
+
+def aggregate_metrics(
+    run_rows: list[dict],
+    lead_rows: list[dict],
+    claim_rows: list[dict],
+    real_corpus_cases: int = 0,
+) -> list[dict]:
     total_leads = len(lead_rows)
     false_qualified = sum(int(row["false_qualified"]) for row in run_rows)
     accepted_without_evidence = sum(int(row["accepted_without_public_evidence"]) for row in run_rows)
+    completed_runs = sum(1 for row in run_rows if row["run_status"] == "completed")
+    waiting_runs = sum(1 for row in run_rows if row["run_status"] == "waiting_for_input")
+    expected_classes = sorted({row["expected_status"] for row in lead_rows})
+    predicted_classes = sorted({row["actual_status"] for row in lead_rows})
+    recalls = {
+        status: recall
+        for status in expected_classes
+        if (recall := class_recall(lead_rows, status)) is not None
+    }
+    zero_recall_classes = [status for status, recall in recalls.items() if recall == 0]
+    claim_support_rate = (
+        sum(1 for row in claim_rows if row["supported"]) / max(1, len(claim_rows))
+    )
     metrics = [
+        ("execution_completion_rate", completed_runs / max(1, len(run_rows)), 1.00),
+        ("waiting_for_input_guard", 1 - (waiting_runs / max(1, len(run_rows))), 1.00),
         ("prompt_country_accuracy", bool_rate(run_rows, "country_pass"), 0.95),
         ("prompt_industry_accuracy", bool_rate(run_rows, "industry_pass"), 0.95),
         ("prompt_offer_accuracy", bool_rate(run_rows, "offer_pass"), 0.90),
@@ -506,9 +552,17 @@ def aggregate_metrics(run_rows: list[dict], lead_rows: list[dict]) -> list[dict]
         ("lead_artifact_coverage", bool_rate(run_rows, "lead_artifact_pass"), 1.00),
         ("tool_path_compliance", bool_rate(run_rows, "tool_path_pass"), 1.00),
         ("lead_status_accuracy", sum(row["status_match"] for row in lead_rows) / max(1, total_leads), 0.85),
+        ("minimum_class_recall", min(recalls.values()) if recalls else 0, 0.80),
+        ("zero_recall_class_guard", 1.0 if not zero_recall_classes else 0.0, 1.00),
+        (
+            "predicted_class_coverage",
+            len(set(predicted_classes) & set(expected_classes)) / max(1, len(expected_classes)),
+            1.00,
+        ),
         ("false_qualified_rate", 1 - (false_qualified / max(1, total_leads)), 0.95),
         ("public_evidence_gate", 1 - (accepted_without_evidence / max(1, total_leads)), 1.00),
-        ("claim_support_rate", mean(float(row["claim_support_rate"]) for row in run_rows), 0.90),
+        ("claim_support_rate", claim_support_rate, 0.90),
+        ("real_corpus_presence", 1.0 if real_corpus_cases > 0 else 0.0, 1.00),
     ]
     return [
         {
@@ -544,6 +598,23 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def append_history(path: Path, summary: dict) -> None:
+    row = {
+        "generated_at": summary["generated_at"],
+        "cases": summary["cases"],
+        "leads": summary["leads"],
+        "metrics_passed": summary["metrics_passed"],
+        "metrics_total": summary["metrics_total"],
+        **{f"metric_{key}": value for key, value in summary["metric_values"].items()},
+    }
+    existing = path.exists()
+    with path.open("a", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(row.keys()))
+        if not existing:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def percent(value: float) -> str:
@@ -615,12 +686,13 @@ def write_html_report(
     metrics: list[dict],
     run_rows: list[dict],
     lead_rows: list[dict],
+    claim_rows: list[dict],
     matrix_rows: list[dict],
 ) -> None:
     pass_count = sum(1 for metric in metrics if metric["pass"])
     lead_accuracy = next(metric for metric in metrics if metric["metric"] == "lead_status_accuracy")
-    prompt_country = next(metric for metric in metrics if metric["metric"] == "prompt_country_accuracy")
-    false_qualified = next(metric for metric in metrics if metric["metric"] == "false_qualified_rate")
+    min_class_recall = next(metric for metric in metrics if metric["metric"] == "minimum_class_recall")
+    real_corpus = next(metric for metric in metrics if metric["metric"] == "real_corpus_presence")
     html_doc = f"""
 <!doctype html>
 <html>
@@ -666,8 +738,8 @@ def write_html_report(
   <section class="cards">
     <div class="card"><div class="label">Metric Gates Passed</div><div class="value">{pass_count}/{len(metrics)}</div></div>
     <div class="card"><div class="label">Lead Status Accuracy</div><div class="value">{percent(float(lead_accuracy["value"]))}</div></div>
-    <div class="card"><div class="label">Country Parse Accuracy</div><div class="value">{percent(float(prompt_country["value"]))}</div></div>
-    <div class="card"><div class="label">False Qualified Guard</div><div class="value">{percent(float(false_qualified["value"]))}</div></div>
+    <div class="card"><div class="label">Minimum Class Recall</div><div class="value">{percent(float(min_class_recall["value"]))}</div></div>
+    <div class="card"><div class="label">Real Corpus Presence</div><div class="value">{percent(float(real_corpus["value"]))}</div></div>
   </section>
 
   <h2>Metric Gates</h2>
@@ -685,7 +757,7 @@ def write_html_report(
   <h2>Run Details</h2>
   <div class="panel">
     <table>
-      <thead><tr><th>Case</th><th>Prompt Accuracy</th><th>Ledger</th><th>Lead Accuracy</th><th>False Qualified</th><th>Search/Crawl</th></tr></thead>
+      <thead><tr><th>Case</th><th>Prompt Accuracy</th><th>Ledger</th><th>Lead Accuracy</th><th>Status</th><th>Duration</th><th>Search/Crawl</th></tr></thead>
       <tbody>
         {''.join(
             f"<tr class='{'' if float(row['lead_accuracy']) >= 0.85 else 'fail-row'}'>"
@@ -693,7 +765,8 @@ def write_html_report(
             f"<td>{float(row['prompt_accuracy']) * 100:.1f}%</td>"
             f"<td>{row['ledger_complete']}</td>"
             f"<td>{float(row['lead_accuracy']) * 100:.1f}%</td>"
-            f"<td>{row['false_qualified']}</td>"
+            f"<td>{html.escape(row['run_status'])}</td>"
+            f"<td>{float(row['duration_ms']):.1f} ms</td>"
             f"<td>{row['search_calls']} / {row['crawl_calls']}</td>"
             f"</tr>"
             for row in run_rows
@@ -719,6 +792,24 @@ def write_html_report(
       </tbody>
     </table>
   </div>
+
+  <h2>Claim Support Failures</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Case</th><th>Company</th><th>Status</th><th>Claim</th><th>Sources</th></tr></thead>
+      <tbody>
+        {''.join(
+            f"<tr class='fail-row'><td>{html.escape(row['case_id'])}</td>"
+            f"<td>{html.escape(row['company_name'])}</td>"
+            f"<td>{html.escape(row['actual_status'])}</td>"
+            f"<td>{html.escape(row['claim_text'])}</td>"
+            f"<td>{html.escape(row['source_urls'])}</td></tr>"
+            for row in claim_rows
+            if not row['supported']
+        ) or '<tr><td colspan="5">No unsupported claims.</td></tr>'}
+      </tbody>
+    </table>
+  </div>
 </main>
 </body>
 </html>
@@ -733,28 +824,42 @@ def run_eval(output_dir: Path, clean: bool = False) -> dict:
     cases = golden_cases()
     run_rows: list[dict] = []
     lead_rows: list[dict] = []
+    claim_rows: list[dict] = []
+    real_corpus_cases = 0
     with TemporaryDirectory(prefix="cold-outreach-eval-") as temp_dir:
         data_root = Path(temp_dir)
         for case in cases:
-            run_row, case_leads = evaluate_case(case, data_root)
+            run_row, case_leads, case_claims = evaluate_case(case, data_root)
             run_rows.append(run_row)
             lead_rows.extend(case_leads)
-    metrics = aggregate_metrics(run_rows, lead_rows)
+            claim_rows.extend(case_claims)
+    metrics = aggregate_metrics(run_rows, lead_rows, claim_rows, real_corpus_cases=real_corpus_cases)
     matrix_rows = confusion_matrix(lead_rows)
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "cases": len(cases),
         "leads": len(lead_rows),
+        "claims": len(claim_rows),
+        "real_corpus_cases": real_corpus_cases,
         "metrics_passed": sum(1 for metric in metrics if metric["pass"]),
         "metrics_total": len(metrics),
         "metric_values": {metric["metric"]: metric["value"] for metric in metrics},
     }
     write_csv(output_dir / "run_metrics.csv", run_rows)
     write_csv(output_dir / "lead_metrics.csv", lead_rows)
+    write_csv(output_dir / "claim_metrics.csv", claim_rows)
     write_csv(output_dir / "summary_metrics.csv", metrics)
     write_csv(output_dir / "confusion_matrix.csv", matrix_rows)
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    write_html_report(output_dir / "architecture_eval_report.html", metrics, run_rows, lead_rows, matrix_rows)
+    write_html_report(
+        output_dir / "architecture_eval_report.html",
+        metrics,
+        run_rows,
+        lead_rows,
+        claim_rows,
+        matrix_rows,
+    )
+    append_history(output_dir.parent / "architecture_eval_history.csv", summary)
     return summary
 
 

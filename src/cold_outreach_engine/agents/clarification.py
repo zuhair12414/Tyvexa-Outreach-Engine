@@ -43,15 +43,4 @@ class ClarificationAgent:
                 ),
             )
 
-        if score.status == LeadStatus.MANUAL_REVIEW and not lead.socials:
-            return ClarificationQuestion(
-                campaign_id=campaign.id,
-                lead_id=None,
-                scope="campaign_wide",
-                question=(
-                    "For this campaign, should missing socials be a rejection reason, "
-                    "or only a lower-confidence signal when website/contact evidence exists?"
-                ),
-            )
-
         return None
